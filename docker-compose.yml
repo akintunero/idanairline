@@ -1,0 +1,106 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: idan-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      gateway:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - public_net
+
+  frontend:
+    container_name: idan-frontend
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    environment:
+      APP_ENV: development
+    restart: unless-stopped
+    networks:
+      - public_net
+
+  gateway:
+    container_name: idan-gateway
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    depends_on:
+      booking-api:
+        condition: service_started
+      payment-api:
+        condition: service_healthy
+      user-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - public_net
+      - internal_net
+
+  booking-api:
+    container_name: idan-booking-api
+    build:
+      context: ./booking-api
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+    volumes:
+      - ./ctf-data:/app/data
+    healthcheck:
+      test: ["NONE"]
+    restart: unless-stopped
+    networks:
+      - internal_net
+
+  payment-api:
+    container_name: idan-payment-api
+    build:
+      context: ./payment-api
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+    volumes:
+      - ./ctf-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - internal_net
+
+  user-api:
+    container_name: idan-user-api
+    build:
+      context: ./user-api
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      JWT_SECRET: super_secret_idan_key # DO NOT USE IN PRODUCTION
+      BYPASS_SIGNATURE_CHECK: "true"
+    volumes:
+      - ./ctf-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - internal_net
+
+networks:
+  public_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true
