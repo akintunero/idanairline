@@ -18,8 +18,8 @@ services:
   frontend:
     container_name: idan-frontend
     build:
-      context: .
-      dockerfile: frontend.Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     environment:
       APP_ENV: development
     restart: unless-stopped

@@ -1,0 +1,17 @@
+.git
+.gitignore
+.vscode
+.idea
+node_modules
+dist
+build
+coverage
+*.log
+*.out
+*.tmp
+*.swp
+*.swo
+tmp
+bin
+booking-api
+.DS_Store

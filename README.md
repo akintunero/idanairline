@@ -2,7 +2,7 @@
 
 > **⚠️ WARNING: This application is intentionally vulnerable. It is designed for educational purposes only. Do NOT deploy it to production or expose it to the public internet.**
 
-![Idan Airlines](idan.png)
+![Idan Airlines](assets/idan.png)
 
 Idan Airlines is a deliberately vulnerable, full-stack airline booking platform built as a **Capture The Flag (CTF)** challenge. It simulates a realistic microservices architecture — complete with a React frontend, Go backend APIs, a Python payment service, and an Nginx reverse proxy — all wired together with Docker Compose.
 
