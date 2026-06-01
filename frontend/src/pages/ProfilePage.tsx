@@ -1,4 +1,3 @@
-// DEV NOTE: Admin dashboard (/api/v1/admin/dashboard) hidden for now. Waiting for Go team to fix the JWT signature bypass bug before we launch it.
 import { useState } from 'react';
 import { User, Plane, Star, MapPin, Calendar, CreditCard as Edit2, Save, X } from 'lucide-react';
 import type { Booking, SeatClass } from '../types';

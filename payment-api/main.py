@@ -19,6 +19,14 @@ conn.commit()
 
 app = FastAPI(title="Idan Payment API", version="1.0.0")
 
+FLAG_NOT_CONFIGURED = "FLAG_NOT_CONFIGURED"
+ENV_FLAG_A05_SQLI = "CTF_FLAG_A05_SQLI"
+ENV_FLAG_A07_SSRF = "CTF_FLAG_A07_SSRF"
+
+
+def get_ctf_flag(env_key: str) -> str:
+    return os.environ.get(env_key) or FLAG_NOT_CONFIGURED
+
 # --- Models ---
 class PaymentRequest(BaseModel):
     booking_id: str = Field(min_length=1)
@@ -55,7 +63,6 @@ def process_payment(req: PaymentRequest) -> Dict[str, Any]:
     # If the user sends this exact card, we simulate a fatal Out-Of-Memory crash.
     # This kills the container, causing the upstream Go API to Fail-Open.
     if req.card_number == "0000-0000-0000-IDAN":
-        print("CRITICAL: Simulated OOM Exception in Payment Gateway")
         os._exit(1)
 
     simulate_processing_delay()
@@ -84,8 +91,17 @@ def apply_promo(req: PromoRequest) -> Dict[str, Any]:
         result = cursor.fetchone()
         
         if result and result[0] == 100:
-            flag = os.getenv("A05_FLAG", "IDAN{SQL1_M4ST3R}")
-            return envelope(True, "promo applied", {"discount": 100, "flag": flag})
+            return envelope(
+                True,
+                "promo applied",
+                {
+                    "discount": 100,
+                    "discount_metadata": {
+                        "campaign_signature": get_ctf_flag(ENV_FLAG_A05_SQLI),
+                        "campaign_id": "IDAN_GODMODE",
+                    },
+                },
+            )
         elif result:
             return envelope(True, "promo applied", {"discount": result[0]})
         else:
@@ -98,4 +114,12 @@ def apply_promo(req: PromoRequest) -> Dict[str, Any]:
 # A07: Hidden internal endpoint, only accessible via SSRF from another container
 @app.get("/internal/debug")
 async def internal_debug():
-    return {"status": "ok", "debug_info": "Internal network exposed.", "flag": "IDAN{SSRF_1NT3RN4L_P1V0T}"}
+    return {
+        "status": "ok",
+        "debug_info": "Internal network exposed.",
+        "system_env": {
+            "APP_ENV": os.environ.get("APP_ENV", "production"),
+            "PAYMENT_GATEWAY_REGION": "af-south-1",
+            "K8S_NODE_DEBUG_KEY": get_ctf_flag(ENV_FLAG_A07_SSRF),
+        },
+    }

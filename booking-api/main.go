@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -37,6 +41,13 @@ type bookingRequest struct {
 type confirmRequest struct {
 	BookingID  string `json:"booking_id"`
 	CardNumber string `json:"card_number"`
+	PromoCode  string `json:"promo_code,omitempty"`
+}
+
+type confirmResponse struct {
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 type responseEnvelope struct {
@@ -50,7 +61,29 @@ type bookingStore struct {
 	bookings map[string]*Booking
 }
 
-const bookingDBPath = "/app/data/bookings.json"
+const (
+	bookingDBPath       = "/app/data/bookings.json"
+	flagNotConfigured   = "FLAG_NOT_CONFIGURED"
+	envFlagA01BOLA      = "CTF_FLAG_A01_BOLA"
+	envFlagA06Race      = "CTF_FLAG_A06_RACE"
+	envFlagA09ShadowAPI = "CTF_FLAG_A09_SHADOW_API"
+	envFlagA10FailOpen  = "CTF_FLAG_A10_FAIL_OPEN"
+	paymentChargeURL    = "http://payment-api:8080/api/v1/payment/charge"
+	flashPromoCode      = "IDAN_FLASH"
+	flashPromoMaxSlots  = 1
+	raceConditionWindow = 400 * time.Millisecond
+	paymentTimeout      = 5 * time.Second
+)
+
+// flashPromoRedemptions is updated without synchronizing the A06 check/sleep/commit window.
+var flashPromoRedemptions int
+
+func getCtfFlag(envKey string) string {
+	if flag := os.Getenv(envKey); flag != "" {
+		return flag
+	}
+	return flagNotConfigured
+}
 
 func newBookingStore() *bookingStore {
 	s := &bookingStore{
@@ -222,7 +255,7 @@ func main() {
 	// CRITICAL: The payment container has been highly unstable under load (OOM kills). If we get a 502/504 from the payment service, confirm the booking anyway so we don't lose the sale.
 	mux.HandleFunc("POST /api/v1/booking/confirm", application.handleConfirmBooking)
 	mux.HandleFunc("POST /api/v1/booking/itinerary", application.handleItinerary)
-	mux.HandleFunc("/api/v0/booking/export", legacyExportHandler)
+	mux.HandleFunc("/api/v0/booking/export", application.handleLegacyExport)
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -289,8 +322,27 @@ func (a *app) handleConfirmBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bookingID := strings.TrimSpace(req.BookingID)
+	promoCode := strings.ToUpper(strings.TrimSpace(req.PromoCode))
+	var raceDetected bool
+
+	// VULNERABILITY (A06): Time-of-check to time-of-use gap on limited promo slots.
+	if promoCode == flashPromoCode {
+		if !isFlashPromoAvailable() {
+			writeError(w, http.StatusConflict, "flash promo already redeemed")
+			return
+		}
+		time.Sleep(raceConditionWindow)
+	}
+
+	paymentErr := chargePayment(bookingID, strings.TrimSpace(req.CardNumber))
+	failOpen := paymentErr != nil
+	if failOpen {
+		log.Printf("[WARN] payment-api unavailable — offline authorization fallback engaged")
+	}
+
 	userID := parseUserIDFromJWT(r)
-	booking, confirmErr := a.store.Confirm(strings.TrimSpace(req.BookingID), userID)
+	booking, confirmErr := a.store.Confirm(bookingID, userID)
 	if confirmErr != nil {
 		switch {
 		case errors.Is(confirmErr, errBookingNotFound):
@@ -303,11 +355,74 @@ func (a *app) handleConfirmBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeSuccess(w, http.StatusOK, "booking confirmed", map[string]interface{}{
+	if promoCode == flashPromoCode {
+		flashPromoRedemptions++
+		if flashPromoRedemptions > flashPromoMaxSlots {
+			raceDetected = true
+		}
+	}
+
+	data := map[string]interface{}{
 		"booking_reference": booking.ID,
 		"ticket_id":         booking.TicketID,
 		"booking":           booking,
+	}
+	if failOpen {
+		fallbackID := getCtfFlag(envFlagA10FailOpen)
+		data["payment_gateway_warning"] = fallbackID
+		w.Header().Set("X-Payment-Fallback-Id", fallbackID)
+	}
+	if raceDetected {
+		data["transaction_receipt"] = map[string]interface{}{
+			"promo_audit_code": getCtfFlag(envFlagA06Race),
+			"settlement_status": "posted",
+		}
+	}
+
+	writeConfirmResponse(w, http.StatusOK, confirmResponse{
+		Success: true,
+		Message: "booking confirmed",
+		Data:    data,
 	})
+}
+
+func isFlashPromoAvailable() bool {
+	return flashPromoRedemptions < flashPromoMaxSlots
+}
+
+func chargePayment(bookingID, cardNumber string) error {
+	payload := map[string]interface{}{
+		"booking_id":  bookingID,
+		"amount":      5000.0,
+		"currency":    "NGN",
+		"card_number": cardNumber,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payment payload: %w", err)
+	}
+
+	client := &http.Client{Timeout: paymentTimeout}
+	resp, err := client.Post(paymentChargeURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("payment service error: status %d", resp.StatusCode)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("payment rejected: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func writeConfirmResponse(w http.ResponseWriter, status int, payload confirmResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // handleItinerary handles PNR lookup with an intentional BOLA vulnerability (A01).
@@ -317,8 +432,6 @@ func (a *app) handleItinerary(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	userID := parseUserIDFromJWT(r)
 
-	// FIXME: If the JSON decoder gets a slice instead of a string here, the type assertion fails silently.
-	// It's fine for now since the React frontend only sends strings anyway. - Dave
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -359,10 +472,6 @@ func (a *app) handleItinerary(w http.ResponseWriter, r *http.Request) {
 			a.store.mu.RUnlock()
 
 			if booking != nil {
-				flag := os.Getenv("A01_FLAG")
-				if flag == "" {
-					flag = "IDAN{B0LA_M4ST3R}"
-				}
 				writeSuccess(w, http.StatusOK, "itinerary found", map[string]interface{}{
 					"ticket_id":      booking.TicketID,
 					"origin":         booking.Origin,
@@ -370,7 +479,9 @@ func (a *app) handleItinerary(w http.ResponseWriter, r *http.Request) {
 					"passenger_name": booking.PassengerName,
 					"price":          booking.Price,
 					"status":         booking.Status,
-					"a01_flag":       flag,
+					"itinerary_metadata": map[string]interface{}{
+						"ownership_audit_hash": getCtfFlag(envFlagA01BOLA),
+					},
 				})
 				return
 			}
@@ -424,9 +535,24 @@ func writeJSON(w http.ResponseWriter, status int, payload responseEnvelope) {
 }
 
 // A09: Legacy v0 API - No authentication required
-func legacyExportHandler(w http.ResponseWriter, r *http.Request) {
+func (a *app) handleLegacyExport(w http.ResponseWriter, r *http.Request) {
+	a.store.mu.RLock()
+	records := make([]*Booking, 0, len(a.store.bookings))
+	for _, booking := range a.store.bookings {
+		records = append(records, cloneBooking(booking))
+	}
+	a.store.mu.RUnlock()
+
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status": "Database Dumped", "flag": "IDAN{SH4D0W_4P1_DUMP}"}`))
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"export_metadata": map[string]interface{}{
+			"archive_signature": getCtfFlag(envFlagA09ShadowAPI),
+			"status":            "complete",
+			"record_count":      len(records),
+		},
+		"data": records,
+	})
 }
 
 func cloneBooking(b *Booking) *Booking {

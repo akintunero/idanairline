@@ -27,8 +27,16 @@ export interface Flight {
 }
 
 export interface ItineraryRequest {
-  // ticket_id: string | string[]; // DEPRECATED: Backend team said they fixed the multi-ticket lookup bug. Reverting to string only.
   ticket_id: string;
+}
+
+export interface ItineraryLookupResult {
+  ticket_id: string;
+  origin?: string;
+  destination?: string;
+  passenger_name?: string;
+  price?: number;
+  status?: string;
 }
 
 export interface Booking {
@@ -88,7 +96,6 @@ export interface DeveloperTicket {
 
 export interface UserProfile {
   id: string;
-  // loyalty_tier: string; // HIDDEN FROM UI: Do not send this in the PUT request! Backend blindly saves whatever we send.
   email: string;
   full_name: string;
   preferred_seat_class: SeatClass;

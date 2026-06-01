@@ -38,7 +38,7 @@ Thank you for your interest in contributing! This project is an educational, int
 When adding a new challenge, please:
 
 1. **Map it to an OWASP category** — Reference the specific OWASP API Security Top 10 ID (e.g., A07).
-2. **Include a flag** — Use the format `IDAN{DESCRIPTIVE_FLAG_NAME}`. Make it configurable via an environment variable (e.g., `A07_FLAG`).
+2. **Include a stealth key** — Configure it via an environment variable (e.g., `CTF_FLAG_A07_SSRF`).
 3. **Add comments in the code** — Mark the vulnerable code with a comment like `// VULNERABILITY (A07): ...` so learners can study the source.
 4. **Update the README** — Add your challenge to the Vulnerability Catalog and CTF Flags sections.
 5. **Keep it realistic** — The vulnerability should resemble something that could exist in a real production codebase.

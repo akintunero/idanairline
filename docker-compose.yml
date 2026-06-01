@@ -10,7 +10,7 @@ services:
       frontend:
         condition: service_started
       gateway:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - public_net
@@ -38,6 +38,12 @@ services:
         condition: service_healthy
       user-api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
     networks:
       - public_net
@@ -49,7 +55,11 @@ services:
       context: ./booking-api
       dockerfile: Dockerfile
     environment:
-      APP_ENV: development
+      APP_ENV: ${APP_ENV:-development}
+      CTF_FLAG_A01_BOLA: ${CTF_FLAG_A01_BOLA:-FLAG_NOT_CONFIGURED}
+      CTF_FLAG_A06_RACE: ${CTF_FLAG_A06_RACE:-FLAG_NOT_CONFIGURED}
+      CTF_FLAG_A09_SHADOW_API: ${CTF_FLAG_A09_SHADOW_API:-FLAG_NOT_CONFIGURED}
+      CTF_FLAG_A10_FAIL_OPEN: ${CTF_FLAG_A10_FAIL_OPEN:-FLAG_NOT_CONFIGURED}
     volumes:
       - ./ctf-data:/app/data
     healthcheck:
@@ -64,7 +74,9 @@ services:
       context: ./payment-api
       dockerfile: Dockerfile
     environment:
-      APP_ENV: development
+      APP_ENV: ${APP_ENV:-development}
+      CTF_FLAG_A05_SQLI: ${CTF_FLAG_A05_SQLI:-FLAG_NOT_CONFIGURED}
+      CTF_FLAG_A07_SSRF: ${CTF_FLAG_A07_SSRF:-FLAG_NOT_CONFIGURED}
     volumes:
       - ./ctf-data:/app/data
     healthcheck:
@@ -83,9 +95,11 @@ services:
       context: ./user-api
       dockerfile: Dockerfile
     environment:
-      APP_ENV: development
-      JWT_SECRET: super_secret_idan_key # DO NOT USE IN PRODUCTION
-      BYPASS_SIGNATURE_CHECK: "true"
+      APP_ENV: ${APP_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_idan_key}
+      BYPASS_SIGNATURE_CHECK: ${BYPASS_SIGNATURE_CHECK:-true}
+      CTF_FLAG_A02_BROKEN_AUTH: ${CTF_FLAG_A02_BROKEN_AUTH:-FLAG_NOT_CONFIGURED}
+      CTF_FLAG_A03_MASS_ASSIGNMENT: ${CTF_FLAG_A03_MASS_ASSIGNMENT:-FLAG_NOT_CONFIGURED}
     volumes:
       - ./ctf-data:/app/data
     healthcheck:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url="${1:-http://localhost:8000}"
+base_url="${1:-http://localhost:8080}"
 
 echo "[1/5] Frontend reachability"
 curl -fsS "${base_url}/" >/dev/null

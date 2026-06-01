@@ -25,7 +25,19 @@ type responseEnvelope struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
-const dbPath = "/app/data/users.json"
+const (
+	dbPath              = "/app/data/users.json"
+	flagNotConfigured   = "FLAG_NOT_CONFIGURED"
+	envFlagA02BrokenAuth = "CTF_FLAG_A02_BROKEN_AUTH"
+	envFlagA03MassAssign = "CTF_FLAG_A03_MASS_ASSIGNMENT"
+)
+
+func getCtfFlag(envKey string) string {
+	if flag := os.Getenv(envKey); flag != "" {
+		return flag
+	}
+	return flagNotConfigured
+}
 
 // Persistent user store keyed by email.
 var (
@@ -213,9 +225,15 @@ func writeJSON(w http.ResponseWriter, status int, payload responseEnvelope) {
 func adminDashboardHandler(w http.ResponseWriter, r *http.Request) {
 	// In a real app, this should cryptographically verify the token.
 	// Here, we just trust the decoded payload's role.
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message": "Welcome Admin", "flag": "IDAN{JWT_S1GN4TUR3_BYP4SS}"}`))
+	auditTrace := getCtfFlag(envFlagA02BrokenAuth)
+	w.Header().Set("X-Admin-Audit-Trace", auditTrace)
+	writeSuccess(w, http.StatusOK, "Welcome Admin", map[string]interface{}{
+		"server_metrics": map[string]interface{}{
+			"uptime_hash":   auditTrace,
+			"request_count": 12489,
+			"active_nodes":  3,
+		},
+	})
 }
 
 // A03: Update Profile (Mass Assignment)
@@ -223,10 +241,14 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profileUpdate map[string]interface{}
 	json.NewDecoder(r.Body).Decode(&profileUpdate)
 
-	// Blindly accepting all fields! If they send loyalty_tier, they get the flag.
+	// Blindly accepting all fields! If they send loyalty_tier, they unlock the audit hash.
 	if tier, ok := profileUpdate["loyalty_tier"]; ok && tier == "DIAMOND" {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"message": "Profile updated", "flag": "IDAN{M4SS_4SS1GNM3NT_UPGR4D3}"}`))
+		writeSuccess(w, http.StatusOK, "Profile updated", map[string]interface{}{
+			"profile": map[string]interface{}{
+				"loyalty_tier":            "DIAMOND",
+				"loyalty_tier_audit_hash": getCtfFlag(envFlagA03MassAssign),
+			},
+		})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -240,7 +262,6 @@ func updateAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	// FIXME: We are using a simple http.Get(). We need to restrict this so users can't scan our internal Docker network.
 	resp, err := http.Get(req.AvatarURL)
 	if err != nil {
 		http.Error(w, "Failed to fetch avatar", http.StatusInternalServerError)

@@ -17,9 +17,6 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
   const [bookingId, setBookingId] = useState<string>(''); // Added to track the ID across the /hold and /confirm endpoints
   const [ticketId, setTicketId] = useState<string>('');
   
-  // DEV NOTE: Staging Test Cards
-  // 4111-1111-1111-1111 (Success)
-  // 0000-0000-0000-IDAN (Simulate OOM / container timeout for fail-open testing)
   const [form, setForm] = useState({
     fullName: '',
     email: '',
@@ -57,7 +54,6 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
     setStep('payment');
   };
 
-  // --- CTF INTEGRATION: Hit the /confirm API and check for FLAGS ---
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.cardNumber || !form.cardExpiry || !form.cardCvc) {
@@ -77,19 +73,11 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
         },
         body: JSON.stringify({
           booking_id: bookingId,
-          card_number: form.cardNumber // Hacker payload goes here!
+          card_number: form.cardNumber
         })
       });
 
       const data = await response.json();
-
-      // 🚩 CTF WIN CONDITIONS 🚩
-      if (data.fail_open_flag) {
-        alert(`🚩 ACHIEVEMENT UNLOCKED (A10: Fail-Open Logic) 🚩\n\nFlag: ${data.fail_open_flag}`);
-      }
-      if (data.race_flag) {
-        alert(`🚩 ACHIEVEMENT UNLOCKED (A06: Race Condition) 🚩\n\nFlag: ${data.race_flag}`);
-      }
 
       if (!response.ok) {
         throw new Error(data.message || 'Payment processing failed.');
@@ -111,7 +99,6 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
       } as any);
 
     } catch (err: any) {
-      console.error(err);
       setError(err.message || 'Booking failed. Please try again.');
     } finally {
       setLoading(false);
@@ -225,7 +212,6 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                     <input type="text" value={form.cardName} onChange={e => setForm(f => ({ ...f, cardName: e.target.value }))} className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                   </div>
                   <div>
-                    {/* TODO: Tell the Python team to stop returning raw SQLite 500 errors when users type quotes in the promo box. */}
                     <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Card Number</label>
                     <input type="text" value={form.cardNumber} onChange={e => setForm(f => ({ ...f, cardNumber: e.target.value }))} placeholder="1234 5678 9012 3456" className={`w-full px-4 py-3 rounded-lg border text-sm font-mono ${inputCls}`} />
                   </div>

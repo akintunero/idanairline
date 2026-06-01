@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plane, Search, CheckCircle, Clock, XCircle, ChevronRight, Calendar, Hash } from 'lucide-react';
-import type { Booking } from '../types';
+import type { Booking, ItineraryLookupResult } from '../types';
 
 interface BookingsPageProps {
   bookings: Booking[];
@@ -65,7 +65,7 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
   const [searchRef, setSearchRef] = useState('');
   const [filter, setFilter] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
   const [pnrSearch, setPnrSearch] = useState('');
-  const [pnrResult, setPnrResult] = useState<any>(null);
+  const [pnrResult, setPnrResult] = useState<ItineraryLookupResult | null>(null);
   const [pnrLoading, setPnrLoading] = useState(false);
   const [pnrError, setPnrError] = useState('');
 
@@ -86,10 +86,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Booking not found');
-
-      if (data.data?.a01_flag) {
-        alert(`\u{1F6A9} ACHIEVEMENT UNLOCKED (A01: Broken Access Control) \u{1F6A9}\n\nFlag: ${data.data.a01_flag}`);
-      }
 
       setPnrResult(data.data);
     } catch (err: any) {
@@ -201,11 +197,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
                   </div>
                 </div>
               </div>
-              {pnrResult.a01_flag && (
-                <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-800 text-sm font-mono">
-                  🚩 FLAG: {pnrResult.a01_flag}
-                </div>
-              )}
             </div>
           )}
         </div>

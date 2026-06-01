@@ -1,63 +1,30 @@
-# ✈️ Idan Airlines — Vulnerable Airline Booking Platform (CTF)
+# Idan Airlines CTF (v1.0)
 
-> **⚠️ WARNING: This application is intentionally vulnerable. It is designed for educational purposes only. Do NOT deploy it to production or expose it to the public internet.**
+Welcome to the **Idan Airlines** security laboratory — a deliberately vulnerable microservices airline booking platform for red-team training, API security auditing, and OWASP API Top 10 practice.
 
-![Idan Airlines](assets/idan.png)
+> **Warning:** This application is intentionally insecure. Run it only in an isolated local environment. Do not deploy to the public internet or use it as a production template.
 
-Idan Airlines is a deliberately vulnerable, full-stack airline booking platform built as a **Capture The Flag (CTF)** challenge. It simulates a realistic microservices architecture — complete with a React frontend, Go backend APIs, a Python payment service, and an Nginx reverse proxy — all wired together with Docker Compose.
+## Scenario
 
-The goal is to help security enthusiasts, students, and developers learn about **OWASP API Security Top 10** vulnerabilities by discovering and exploiting them in a safe, controlled environment.
+You have been hired to perform a **black-box** security assessment of Idan Airlines' booking platform. The airline recently moved to a microservices architecture and wants its API ecosystem tested. Your job is to find flaws, chain them where possible, and collect **stealth keys** (hashes) from successful exploit traces in raw HTTP traffic — the UI will not reveal them.
 
-## 📋 Table of Contents
+## Rules of engagement
 
-- [Disclaimer](#-disclaimer)
-- [Architecture](#-architecture)
-- [Tech Stack](#-tech-stack)
-- [Getting Started](#-getting-started)
-- [Project Structure](#-project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-- [Author](#-author)
+- **Black-box:** No backend source documentation is provided to players.
+- **Scope:** All services started by this repository's Docker Compose stack at [http://localhost:8080](http://localhost:8080) and its `/api/*` routes.
+- **Goal:** Identify and document issues aligned with the [OWASP API Security Top 10 (2023)](https://owasp.org/API-Security/editions/2023/en/0x00-header-part-2/).
+- **Ethics:** Authorized local lab use only.
 
-## 🚨 Disclaimer
-
-This project is **intentionally insecure**. It contains real, exploitable vulnerabilities including SQL injection, broken authentication, broken object-level authorization, and more.
-
-**You must only run this application in an isolated, local environment (e.g., your own machine or a private lab).** Do not:
-
-- Deploy this to any public-facing server
-- Use it to attack systems you do not own
-- Store real personal or financial data in it
-
-By using this software, you agree that it is solely for **educational and authorized security testing purposes**. The author assumes no liability for misuse.
-
-## 🏗 Architecture
-
-The platform uses a **microservices architecture** orchestrated via Docker Compose:
-
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS |
-| **API Gateway** | Go 1.22 (`net/http/httputil.ReverseProxy`) |
-| **Booking API** | Go 1.22 (`net/http`) |
-| **User/Auth API** | Go 1.22 (`net/http`) |
-| **Payment API** | Python 3.12, FastAPI, SQLite |
-| **Reverse Proxy** | Nginx 1.27 |
-| **Orchestration** | Docker Compose |
-| **Database** | JSON files + SQLite (backend CTF services) |
-
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
-- [Node.js](https://nodejs.org/) 20+ (only needed if developing the frontend locally)
-- Git
+- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) v2+
+- [Burp Suite](https://portswigger.net/burp/) or [OWASP ZAP](https://zaproxy.org/) (recommended)
+- [curl](https://curl.se/) or [Postman](https://www.postman.com/)
+- [Node.js](https://nodejs.org/) 20+ (optional — only if developing the frontend locally)
 
-### Quick Start
+### Quick start
 
 ```bash
 # 1. Clone the repository
@@ -70,78 +37,67 @@ make up
 
 # 3. Open in your browser
 open http://localhost:8080
+```
 
+4. **Verify the stack** (optional)
 
-### Stopping
+   ```bash
+   make smoke
+   ```
+
+   You should be able to browse the site and walk through search, booking, login, and registration flows.
+
+## Architecture (high level)
+
+```
+Browser → Nginx (:8080) → React frontend
+                        → API Gateway → booking-api
+                                        → payment-api
+                                        → user-api
+```
+
+Backend services run on an internal Docker network. All player traffic enters through port **8080**.
+
+## Troubleshooting and operations
+
+### View logs
+
+```bash
+make logs
+```
+
+Or:
+
+```bash
+docker compose logs -f
+```
+
+### Reset lab data
+
+Stopping containers does not wipe persisted challenge state. For a full reset:
 
 ```bash
 make down
-# or: docker compose down
+rm -rf ctf-data/
+make up
 ```
 
-### Frontend Development (Optional)
+### Payment service unavailable
 
-If you want to work on the React frontend with hot-reload:
+Some exploits intentionally disrupt the payment service. If charges fail across the board, restart the stack:
 
 ```bash
-npm install
-npm run dev
-```
-
-
-## 📁 Project Structure
-
-```
-idanairline/
-├── booking-api/           # Go — Booking microservice (A01 BOLA vuln)
-│   ├── Dockerfile
-│   └── main.go
-├── gateway/               # Go — API gateway / reverse proxy
-│   ├── Dockerfile
-│   └── main.go
-├── payment-api/           # Python — Payment microservice (A05 SQLi, A10 Fail-Open)
-│   ├── Dockerfile
-│   ├── main.py
-│   └── requirements.txt
-├── user-api/              # Go — Authentication & user service
-│   ├── Dockerfile
-│   └── main.go
-├── nginx/                 # Nginx config for routing
-│   ├── frontend.conf
-│   └── gateway.conf
-├── src/                   # React frontend (TypeScript + Tailwind)
-│   ├── App.tsx
-│   ├── components/
-│   ├── pages/
-│   ├── data/
-│   ├── lib/
-│   └── types/
-├── ctf-data/              # Runtime data (JSON DBs, SQLite)
-├── scripts/
-│   └── e2e-smoke.sh       # End-to-end smoke tests
-├── docker-compose.yml     # Orchestration for all services
-├── Makefile               # Convenience commands (up, down, logs, smoke)
-├── frontend.Dockerfile    # Multi-stage build for the React frontend
-├── CONTRIBUTING.md        # Contribution guidelines
-├── SECURITY.md            # Security policy
-├── LICENSE                # MIT License
-└── README.md              # You are here
+make down && make up
 ```
 
 ## Contributing
 
-Contributions are welcome! Whether you want to add a new vulnerability challenge, improve the frontend, fix documentation, or suggest new OWASP categories — please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting unintentional bugs.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## 👤 Author
-
-**Olumayowa Akinkuehinmi**
-- Email: [akintunero101@gmail.com](mailto:akintunero101@gmail.com)
-- GitHub: [@akintunero](https://github.com/akintunero)
-
----
-
-* Hack responsibly.*
+MIT — see [LICENSE](LICENSE).
