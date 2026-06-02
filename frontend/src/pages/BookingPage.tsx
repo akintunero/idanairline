@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plane, CreditCard, Lock, CheckCircle, ChevronLeft, User, Mail, Hash, Clock, Wifi, Utensils, Luggage, AlertCircle } from 'lucide-react';
+import { Plane, CheckCircle, ChevronLeft, AlertCircle } from 'lucide-react';
 import type { Flight, SearchParams, Booking } from '../types';
 
 interface BookingPageProps {

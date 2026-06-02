@@ -111,7 +111,6 @@ export default function DevToolsPage({ isDark }: DevToolsPageProps) {
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const panelBg = isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200';
-  const sidePanelBg = isDark ? 'bg-gray-850' : 'bg-gray-50';
   const inputBg = isDark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400';
   const textPrimary = isDark ? 'text-white' : 'text-gray-900';
   const textSecondary = isDark ? 'text-gray-400' : 'text-gray-500';
@@ -121,8 +120,6 @@ export default function DevToolsPage({ isDark }: DevToolsPageProps) {
     setLoading(true);
     const start = Date.now();
 
-    // Normalize endpoint for lookup
-    const key = `${method} ${endpoint}`;
     const mockKey = Object.keys(MOCK_RESPONSES).find(k => {
       const [m, p] = k.split(' ');
       const pattern = p.replace(/:[\w]+/g, '[^/]+');

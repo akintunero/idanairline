@@ -237,9 +237,9 @@ function FlightCard({ flight, onSelect, isDark, isCheapest }: {
             {flight.seatClass.charAt(0).toUpperCase() + flight.seatClass.slice(1)}
           </span>
           <div className="flex gap-1.5">
-            <Wifi className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} title="Wi-Fi" />
-            <Utensils className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} title="Meals" />
-            <Luggage className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} title="Baggage included" />
+            <span title="Wi-Fi"><Wifi className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} aria-hidden="true" /></span>
+            <span title="Meals"><Utensils className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} aria-hidden="true" /></span>
+            <span title="Baggage included"><Luggage className={`w-3.5 h-3.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} aria-hidden="true" /></span>
           </div>
           <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{flight.aircraft}</span>
         </div>
