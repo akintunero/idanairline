@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  go-services:
+    name: Go services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [booking-api, user-api, gateway]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build
+        run: |
+          go mod init "idan/${{ matrix.service }}" 2>/dev/null || true
+          go mod tidy
+          go build -o /dev/null .
+
+  payment-api:
+    name: Payment API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payment-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile
+        run: python -m py_compile main.py
+
+  integration:
+    name: Docker integration
+    runs-on: ubuntu-latest
+    needs: [frontend, go-services, payment-api]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start stack
+        run: docker compose up --build -d
+
+      - name: Wait for portal
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/ >/dev/null 2>&1; then
+              echo "Portal is up"
+              exit 0
+            fi
+            echo "Waiting for http://localhost:8080 ($i/60)..."
+            sleep 5
+          done
+          echo "Timed out waiting for portal"
+          docker compose ps
+          docker compose logs
+          exit 1
+
+      - name: Smoke tests
+        run: make smoke
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
