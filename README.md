@@ -1,4 +1,4 @@
-# Idan Airlines CTF (v1.0)
+# Idan Airlines CTF (v1.1)
 
 Welcome to the **Idan Airlines** security laboratory — a deliberately vulnerable microservices airline booking platform for red-team training, API security auditing, and OWASP API Top 10 practice.
 
