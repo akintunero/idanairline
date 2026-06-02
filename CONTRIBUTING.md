@@ -16,7 +16,7 @@ Thank you for your interest in contributing! This project is an educational, int
 1. Fork the repository
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/<your-username>/idanairline.git
+   git clone https://github.com/akintunero/idanairline.git
    cd idanairline
    ```
 3. Create a feature branch:
