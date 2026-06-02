@@ -88,8 +88,8 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
       if (!res.ok) throw new Error(data.message || 'Booking not found');
 
       setPnrResult(data.data);
-    } catch (err: any) {
-      setPnrError(err.message || 'Failed to look up booking');
+    } catch (err: unknown) {
+      setPnrError(err instanceof Error ? err.message : 'Failed to look up booking');
     } finally {
       setPnrLoading(false);
     }

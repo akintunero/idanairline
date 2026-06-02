@@ -93,13 +93,23 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
       onBookingComplete({
         id: bookingId,
         booking_reference: bookingId,
+        user_id: null,
         passenger_name: form.fullName,
-        status: 'confirmed',
+        passenger_email: form.email,
+        passport_number: form.passportNumber,
+        origin: flight.origin.code,
+        destination: flight.destination.code,
+        departure_date: searchParams.departureDate,
+        return_date: searchParams.returnDate ?? null,
+        flight_number: flight.flightNumber,
+        seat_class: searchParams.seatClass,
         price: grandTotal,
-      } as any);
+        status: 'confirmed',
+        created_at: new Date().toISOString(),
+      });
 
-    } catch (err: any) {
-      setError(err.message || 'Booking failed. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Booking failed. Please try again.');
     } finally {
       setLoading(false);
     }

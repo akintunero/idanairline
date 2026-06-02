@@ -41,8 +41,8 @@ export default function RegisterPage({ isDark, onNavigate }: RegisterPageProps) 
         throw new Error(data.message || 'Registration failed.');
       }
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }

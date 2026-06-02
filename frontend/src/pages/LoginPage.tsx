@@ -42,8 +42,8 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
       }
       localStorage.setItem('idan_auth_token', data.token);
       onLogin(data.token);
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
