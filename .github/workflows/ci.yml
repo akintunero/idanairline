@@ -61,6 +61,8 @@ jobs:
         run: |
           if [ "${{ matrix.service.has-mod }}" = "true" ]; then
             go mod tidy
+          else
+            go mod init "idan/${{ matrix.service.path }}" 2>/dev/null || true
           fi
           go build -o /dev/null .
 
