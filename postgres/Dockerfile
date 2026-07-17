@@ -1,6 +1,4 @@
 FROM postgres:16-alpine
 
-COPY postgres/entrypoint.sh /usr/local/bin/idan-postgres-init.sh
-RUN chmod +x /usr/local/bin/idan-postgres-init.sh
-
-ENTRYPOINT ["idan-postgres-init.sh"]
+# Ensure shared volume is writable by postgres user (UID 999)
+RUN mkdir -p /shared && chmod 777 /shared
