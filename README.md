@@ -1,6 +1,7 @@
 # Idan Airlines
 
 Regional carrier serving West Africa, Europe, and the Middle East.
+Connect via [idan.air](https://idan.air).
 
 ## Getting Started
 
@@ -10,10 +11,10 @@ docker compose up --build -d
 
 The booking portal will be available at `http://localhost:8080`.
 
-## Prerequisites
+## Tech Stack
 
-- Docker and Docker Compose v2+
+React, Go, Python, PostgreSQL, Redis, nginx.
 
-## Support
+## License
 
-For operational issues, contact the Idan Airlines engineering team.
+MIT.
