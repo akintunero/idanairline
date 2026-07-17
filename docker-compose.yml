@@ -1,8 +1,6 @@
 services:
   postgres:
-    build:
-      context: .
-      dockerfile: postgres/Dockerfile
+    image: postgres:16-alpine
     container_name: idan-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-idan}
@@ -10,9 +8,7 @@ services:
       POSTGRES_DB: ${DB_NAME:-idanairline}
     volumes:
       - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - ./scripts/db/share-password.sh:/docker-entrypoint-initdb.d/share-password.sh:ro
       - pgdata:/var/lib/postgresql/data
-      - shared-data:/shared
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-idan} -d ${DB_NAME:-idanairline}"]
       interval: 5s
