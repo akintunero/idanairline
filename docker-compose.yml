@@ -3,12 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: idan-postgres
     shm_size: 256mb
-    environment:
-      POSTGRES_USER: ${DB_USER:-idan}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
-      POSTGRES_DB: ${DB_NAME:-idanairline}
     volumes:
-      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-idan} -d ${DB_NAME:-idanairline}"]
