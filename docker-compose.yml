@@ -3,6 +3,16 @@ services:
     image: postgres:16-alpine
     container_name: idan-postgres
     shm_size: 256mb
+    environment:
+      POSTGRES_USER: ${DB_USER:-idan}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
+      POSTGRES_DB: ${DB_NAME:-idanairline}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 15s
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
