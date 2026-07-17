@@ -4,7 +4,7 @@ WORKDIR /app
 COPY booking-api/go.mod ./
 COPY booking-api/*.go ./
 RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o booking-api main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o booking-api .
 
 FROM alpine:3.20
 
