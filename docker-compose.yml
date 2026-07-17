@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: idan-postgres
+    shm_size: 256mb
     environment:
       POSTGRES_USER: ${DB_USER:-idan}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-}
