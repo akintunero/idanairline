@@ -13,5 +13,4 @@ coverage
 *.swo
 tmp
 bin
-booking-api
 .DS_Store
