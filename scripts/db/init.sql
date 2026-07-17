@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS fare_rules (
     cancellation_hours INT DEFAULT 24,
     refund_percent DECIMAL(5, 2) DEFAULT 100.00,
     change_fee DECIMAL(10, 2) DEFAULT 0.00,
-    checkin_opens_hours INT DEFAULT 24
+    checkin_opens_hours INT DEFAULT 24,
+    UNIQUE(flight_id, seat_class)
 );
 
 -- ── Seats ──────────────────────────────────────────────────────────────────
