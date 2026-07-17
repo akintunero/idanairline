@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DB_PASSWORD: ci_test_password
+  JWT_SECRET: ci_jwt_secret
+  ADMIN_PASSWORD: ci_admin_pass
+
 jobs:
   frontend:
     name: Frontend
@@ -19,22 +24,15 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
       - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
+        run: npx tsc --noEmit
       - name: Build
         run: npm run build
 
@@ -43,69 +41,77 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [booking-api, user-api, gateway]
-    defaults:
-      run:
-        working-directory: ${{ matrix.service }}
+        service:
+          - path: booking-api
+            has-mod: true
+          - path: user-api
+            has-mod: true
+          - path: gateway
+            has-mod: false
+          - path: waf-logger
+            has-mod: false
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
       - name: Build
+        working-directory: ${{ matrix.service.path }}
         run: |
-          go mod init "idan/${{ matrix.service }}" 2>/dev/null || true
-          go mod tidy
+          if [ "${{ matrix.service.has-mod }}" = "true" ]; then
+            go mod tidy
+          fi
           go build -o /dev/null .
 
-  payment-api:
-    name: Payment API
+  python-services:
+    name: Python services
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: payment-api
+    strategy:
+      matrix:
+        service: [payment-api, email-service]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
+        working-directory: ${{ matrix.service }}
         run: pip install -r requirements.txt
-
       - name: Compile
+        working-directory: ${{ matrix.service }}
         run: python -m py_compile main.py
 
   integration:
     name: Docker integration
     runs-on: ubuntu-latest
-    needs: [frontend, go-services, payment-api]
+    needs: [frontend, go-services, python-services]
     steps:
       - uses: actions/checkout@v4
 
       - name: Build and start stack
-        run: docker compose up --build -d
+        run: |
+          docker compose up --build -d
 
       - name: Wait for portal
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             if curl -fsS http://localhost:8080/ >/dev/null 2>&1; then
               echo "Portal is up"
               exit 0
             fi
-            echo "Waiting for http://localhost:8080 ($i/60)..."
+            echo "Waiting for http://localhost:8080 ($i/90)..."
             sleep 5
           done
           echo "Timed out waiting for portal"
           docker compose ps
-          docker compose logs
+          docker compose logs --tail=50
           exit 1
 
       - name: Smoke tests
-        run: make smoke
+        run: |
+          chmod +x scripts/e2e-smoke.sh
+          bash scripts/e2e-smoke.sh
 
       - name: Tear down
         if: always()

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plane, Search, CheckCircle, Clock, XCircle, ChevronRight, Calendar, Hash } from 'lucide-react';
+import { Plane, Search, CheckCircle, Clock, XCircle, ChevronRight, Calendar, Hash, Download } from 'lucide-react';
 import type { Booking, ItineraryLookupResult } from '../types';
 
 interface BookingsPageProps {
@@ -95,6 +95,33 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
     }
   };
 
+  const handleDownloadBoardingPass = async (ticketId: string) => {
+    try {
+      const res = await fetch(`/api/v1/booking/boarding-pass?file=${encodeURIComponent(ticketId)}.pdf`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `boarding-pass-${ticketId}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const data = await res.json();
+        if (data.path_traversal_audit) {
+          alert(`Boarding pass system audit: ${data.path_traversal_audit}`);
+        }
+      }
+    } catch {}
+  };
+
+  const handlePathTraversalTest = () => {
+    const file = prompt('Enter file path for boarding pass:', '../../../etc/passwd');
+    if (file) {
+      handleDownloadBoardingPass(file);
+    }
+  };
+
   const allBookings = [...bookings, ...SAMPLE_BOOKINGS];
 
   const filtered = allBookings.filter(b => {
@@ -122,7 +149,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
   return (
     <div className={`${bg} min-h-screen py-8`}>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
         <div className="mb-8">
           <h1 className={`text-2xl font-bold mb-1 ${textPrimary}`}>My Bookings</h1>
           <p className={`text-sm ${textSecondary}`}>Manage your upcoming and past travel bookings</p>
@@ -178,12 +204,10 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {pnrResult.passenger_name && (
-                  <div>
-                    <div className={`text-xs ${textSecondary}`}>Passenger</div>
-                    <div className={`text-sm font-medium ${textPrimary}`}>{pnrResult.passenger_name}</div>
-                  </div>
-                )}
+                <div>
+                  <div className={`text-xs ${textSecondary}`}>Passenger</div>
+                  <div className={`text-sm font-medium ${textPrimary}`}>{pnrResult.passenger_name || 'N/A'}</div>
+                </div>
                 <div>
                   <div className={`text-xs ${textSecondary}`}>Status</div>
                   <div className={`text-sm font-medium ${pnrResult.status === 'CONFIRMED' ? 'text-emerald-600' : textPrimary}`}>
@@ -197,6 +221,17 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
                   </div>
                 </div>
               </div>
+              {pnrResult.ticket_id && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => handleDownloadBoardingPass(pnrResult.ticket_id!)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Boarding Pass
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -252,7 +287,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
             return (
               <div key={booking.id} className={`${cardBg} rounded-xl border p-5 transition-all hover:shadow-md`}>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  {/* Route */}
                   <div className="flex items-center gap-3 flex-1">
                     <div className="w-10 h-10 bg-sky-600 rounded-lg flex items-center justify-center flex-shrink-0">
                       <Plane className="w-5 h-5 text-white" />
@@ -267,7 +301,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
                     </div>
                   </div>
 
-                  {/* Details */}
                   <div className="flex flex-wrap items-center gap-4">
                     <div className={`flex items-center gap-1.5 text-xs ${textSecondary}`}>
                       <Hash className="w-3.5 h-3.5" />
@@ -282,9 +315,14 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
                       {sc.label}
                     </div>
                     <div className={`font-bold ${textPrimary}`}>${booking.price.toLocaleString()}</div>
-                    <button className={`flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700 transition-colors`}>
-                      View details <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    {booking.status === 'confirmed' && (
+                      <button
+                        onClick={() => handleDownloadBoardingPass(booking.booking_reference)}
+                        className="flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700 transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Boarding Pass
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -300,6 +338,22 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Dev tool: Path traversal test */}
+        <div className={`mt-8 p-4 rounded-xl border border-dashed ${isDark ? 'border-gray-700 bg-gray-800/30' : 'border-amber-300 bg-amber-50/30'}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className={`text-xs font-semibold ${isDark ? 'text-gray-500' : 'text-amber-700'}`}>Developer Tools</span>
+              <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-600' : 'text-amber-600'}`}>Boarding pass file resolver</p>
+            </div>
+            <button
+              onClick={handlePathTraversalTest}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              Test File Path
+            </button>
+          </div>
         </div>
       </div>
     </div>

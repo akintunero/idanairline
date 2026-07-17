@@ -1,0 +1,4 @@
+github.com/gomodule/redigo v1.9.2 h1:HpZLY3eG1rYzL1h3iX4KV7tvf2fV36DkXiPo2RWslR8=
+github.com/gomodule/redigo v1.9.2/go.mod h1:KsYdW1QIAht3Gsv2SYYlV2JZOb4F3JQePCf2HgZRlqM=
+github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
+github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKFbGRn7nbIqu9HhEDnDfBij0=

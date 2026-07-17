@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
@@ -10,8 +10,34 @@ interface LoginPageProps {
 export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [csrfToken, setCsrfToken] = useState('');
+
+  useEffect(() => {
+    // Check URL for redirect_uri parameter (open redirect vulnerability)
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get('redirect_uri');
+    if (redirect) {
+      setRedirectUri(redirect);
+    }
+    fetchCsrfToken();
+  }, []);
+
+  const fetchCsrfToken = async () => {
+    try {
+      const token = localStorage.getItem('idan_auth_token');
+      if (!token) return;
+      const res = await fetch('/api/v1/auth/csrf-token', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCsrfToken(data.csrf_token);
+      }
+    } catch {}
+  };
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const cardBg = isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
@@ -20,7 +46,6 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
   const inputCls = isDark
     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500 focus:border-sky-500'
     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-sky-500';
-  const labelCls = isDark ? 'text-gray-300' : 'text-gray-700';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,11 +56,26 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
     setLoading(true);
     setError('');
     try {
+      const body: Record<string, string> = { email, password };
+      if (redirectUri) {
+        body.redirect_uri = redirectUri;
+      }
+
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
+
+      // Handle open redirect
+      if (res.status === 302) {
+        const location = res.headers.get('Location');
+        if (location) {
+          window.location.href = location;
+          return;
+        }
+      }
+
       const data = await res.json();
       if (!res.ok || !data.token) {
         throw new Error(data.message || 'Invalid credentials.');
@@ -55,6 +95,11 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
         <div className="text-center mb-8">
           <h1 className={`text-2xl font-bold mb-1 ${textPrimary}`}>Welcome back</h1>
           <p className={`text-sm ${textSecondary}`}>Sign in to your Idan Airlines account</p>
+          {redirectUri && (
+            <p className={`text-xs mt-2 text-amber-600`}>
+              Redirecting to: {redirectUri}
+            </p>
+          )}
         </div>
 
         <div className={`${cardBg} rounded-2xl border p-8`}>
@@ -64,8 +109,14 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
                 <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
               </div>
             )}
+
+            {/* CSRF token sent as header (not validated server-side — CSRF vuln) */}
+            {csrfToken && (
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+            )}
+
             <div>
-              <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Email address</label>
+              <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Email address</label>
               <input
                 type="email"
                 value={email}
@@ -76,7 +127,7 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
               />
             </div>
             <div>
-              <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Password</label>
+              <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Password</label>
               <input
                 type="password"
                 value={password}

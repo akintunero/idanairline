@@ -1,31 +1,21 @@
-# Stage 1: The Builder
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
-
-# Copy the source code
-COPY . .
-
-# Initialize the Go module if it doesn't exist, and tidy dependencies
-RUN go mod init idan/booking || true
+COPY booking-api/go.mod ./
+COPY booking-api/*.go ./
 RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o booking-api main.go
 
-# Build the binary
-# CGO_ENABLED=0 ensures it's a static binary
-# -ldflags="-s -w" strips debug symbols to make the CTF harder
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o booking-api main.go
+FROM alpine:3.20
 
-# Stage 2: The Production Container (Distroless)
-FROM gcr.io/distroless/static-debian11
+RUN apk add --no-cache ca-certificates
 
-WORKDIR /
-
-# Copy only the compiled binary from the builder stage
-COPY --from=builder /app/booking-api /booking-api
-
-# Run as a non-root user for security
-USER nonroot:nonroot
+WORKDIR /app
+COPY --from=builder /app/booking-api /app/booking-api
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8080
 
-ENTRYPOINT ["/booking-api"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/booking-api"]

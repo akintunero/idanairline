@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 type routeTarget struct {
@@ -18,6 +22,62 @@ type routeTarget struct {
 
 type gateway struct {
 	routeTable []routeTarget
+}
+
+type rateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*clientBucket
+	limit   int
+	window  time.Duration
+}
+
+type clientBucket struct {
+	count       int
+	windowStart time.Time
+}
+
+var limiter *rateLimiter
+
+func initRateLimiter() {
+	limit := 60
+	windowSec := 60
+	if v := os.Getenv("RATE_LIMIT_REQUESTS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	if v := os.Getenv("RATE_LIMIT_WINDOW_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			windowSec = n
+		}
+	}
+	limiter = &rateLimiter{
+		clients: make(map[string]*clientBucket),
+		limit:   limit,
+		window:  time.Duration(windowSec) * time.Second,
+	}
+}
+
+func (rl *rateLimiter) allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	bucket, exists := rl.clients[key]
+	if !exists || now.Sub(bucket.windowStart) > rl.window {
+		rl.clients[key] = &clientBucket{
+			count:       1,
+			windowStart: now,
+		}
+		return true
+	}
+
+	if bucket.count >= rl.limit {
+		return false
+	}
+
+	bucket.count++
+	return true
 }
 
 func newGateway() (*gateway, error) {
@@ -42,6 +102,8 @@ func newGateway() (*gateway, error) {
 }
 
 func main() {
+	initRateLimiter()
+
 	gw, err := newGateway()
 	if err != nil {
 		log.Fatal(err)
@@ -67,16 +129,31 @@ func (g *gateway) routes() http.Handler {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
 	})
 }
 
 func (g *gateway) handleRoute(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	} else {
+		clientIP = strings.Split(clientIP, ",")[0]
+		clientIP = strings.TrimSpace(clientIP)
+	}
+
+	if !limiter.allow(clientIP) {
+		w.Header().Set("X-RateLimit-Info", "rate_limit_exceeded")
+		w.Header().Set("X-RateLimit-ClientIP", clientIP)
+		writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded. Try again later.")
+		return
+	}
+
 	for _, route := range g.routeTable {
 		basePath := strings.TrimSuffix(route.prefix, "/")
 		if r.URL.Path == basePath || strings.HasPrefix(r.URL.Path, route.prefix) {
-			log.Printf("[Gateway] method=%s path=%s upstream=%s", r.Method, r.URL.Path, route.label)
+			log.Printf("[Gateway] method=%s path=%s upstream=%s client=%s", r.Method, r.URL.Path, route.label, clientIP)
 			route.proxy.ServeHTTP(w, r)
 			return
 		}
@@ -104,7 +181,7 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

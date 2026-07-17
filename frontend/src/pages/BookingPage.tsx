@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import { Plane, CheckCircle, ChevronLeft, AlertCircle } from 'lucide-react';
+import { Plane, CheckCircle, ChevronLeft, AlertCircle, Plus, X, User } from 'lucide-react';
+import SeatMap from '../components/SeatMap';
 import type { Flight, SearchParams, Booking } from '../types';
+
+interface PassengerForm {
+  fullName: string;
+  email: string;
+  passportNumber: string;
+}
 
 interface BookingPageProps {
   flight: Flight;
@@ -11,21 +18,32 @@ interface BookingPageProps {
 }
 
 export default function BookingPage({ flight, searchParams, onBack, onBookingComplete, isDark }: BookingPageProps) {
-  const [step, setStep] = useState<'details' | 'payment' | 'confirmed'>('details');
+  const [step, setStep] = useState<'details' | 'seats' | 'payment' | 'confirmed'>('details');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [bookingId, setBookingId] = useState<string>(''); // Added to track the ID across the /hold and /confirm endpoints
-  const [ticketId, setTicketId] = useState<string>('');
-  
-  const [form, setForm] = useState({
-    fullName: '',
-    email: '',
-    passportNumber: '',
-    cardNumber: '',
-    cardExpiry: '',
-    cardCvc: '',
-    cardName: '',
-  });
+  const [bookingId, setBookingId] = useState('');
+  const [ticketId, setTicketId] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvc, setCardCvc] = useState('');
+
+  const [passengers, setPassengers] = useState<PassengerForm[]>([
+    { fullName: '', email: '', passportNumber: '' },
+  ]);
+
+  const addPassenger = () => {
+    setPassengers(p => [...p, { fullName: '', email: '', passportNumber: '' }]);
+  };
+
+  const removePassenger = (idx: number) => {
+    if (passengers.length > 1) {
+      setPassengers(p => p.filter((_, i) => i !== idx));
+    }
+  };
+
+  const updatePassenger = (idx: number, field: keyof PassengerForm, value: string) => {
+    setPassengers(p => p.map((pax, i) => i === idx ? { ...pax, [field]: value } : pax));
+  };
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const cardBg = isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
@@ -34,126 +52,97 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
   const inputCls = isDark
     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500 focus:border-sky-500'
     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-sky-500';
-  const labelCls = isDark ? 'text-gray-300' : 'text-gray-700';
 
-  const totalPrice = flight.price * searchParams.passengers;
-  const taxes = Math.round(totalPrice * 0.12);
-  const fees = 25;
-  const grandTotal = totalPrice + taxes + fees;
+  const totalPrice = flight.price * searchParams.passengers * passengers.length;
 
-  // Proceed to payment step (no /hold API call needed)
   const handleSubmitDetails = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.fullName || !form.email || !form.passportNumber) {
-      setError('Please fill in all required fields.');
-      return;
+    for (const p of passengers) {
+      if (!p.fullName || !p.email || !p.passportNumber) {
+        setError('Please fill in all passenger details.');
+        return;
+      }
     }
     setError('');
-    const newBookingId = `IDN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
-    setBookingId(newBookingId);
-    setStep('payment');
+    const newId = `IDN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    setBookingId(newId);
+    setStep('seats');
   };
 
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.cardNumber || !form.cardExpiry || !form.cardCvc) {
+    if (!cardNumber || !cardExpiry || !cardCvc) {
       setError('Please enter your payment details.');
       return;
     }
-    
     setLoading(true);
     setError('');
 
     try {
-      const response = await fetch('/api/v1/booking/confirm', {
+      const token = localStorage.getItem('idan_auth_token');
+      // Hold the booking first
+      await fetch('/api/v1/booking/hold', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('idan_auth_token') ?? ''}`
-        },
-        body: JSON.stringify({
-          booking_id: bookingId,
-          card_number: form.cardNumber
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+        body: JSON.stringify({ booking_id: bookingId, flight_id: flight.id }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Payment processing failed.');
+      // Add passengers
+      for (const pax of passengers) {
+        await fetch('/api/v1/booking/passengers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+          body: JSON.stringify({ booking_id: bookingId, full_name: pax.fullName, email: pax.email, passport_number: pax.passportNumber }),
+        });
       }
 
-      if (data.data?.ticket_id) {
-        setTicketId(data.data.ticket_id);
-      }
+      // Confirm booking
+      const res = await fetch('/api/v1/booking/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+        body: JSON.stringify({ booking_id: bookingId, card_number: cardNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Payment processing failed.');
 
+      if (data.data?.ticket_id) setTicketId(data.data.ticket_id);
       setStep('confirmed');
-      
-      // Pass mock data back up so the UI completes nicely
+
       onBookingComplete({
         id: bookingId,
         booking_reference: bookingId,
         user_id: null,
-        passenger_name: form.fullName,
-        passenger_email: form.email,
-        passport_number: form.passportNumber,
+        passenger_name: passengers[0].fullName,
+        passenger_email: passengers[0].email,
+        passport_number: passengers[0].passportNumber,
         origin: flight.origin.code,
         destination: flight.destination.code,
         departure_date: searchParams.departureDate,
-        return_date: searchParams.returnDate ?? null,
+        return_date: null,
         flight_number: flight.flightNumber,
         seat_class: searchParams.seatClass,
-        price: grandTotal,
+        price: totalPrice,
         status: 'confirmed',
         created_at: new Date().toISOString(),
       });
-
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Booking failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Booking failed.');
     } finally {
       setLoading(false);
     }
   };
 
-  const classLabels: Record<string, string> = { economy: 'Economy Class', business: 'Business Class', first: 'First Class' };
-
   return (
     <div className={`${bg} min-h-screen py-8`}>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         {step !== 'confirmed' && (
           <button onClick={onBack} className={`flex items-center gap-2 text-sm mb-6 transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}>
             <ChevronLeft className="w-4 h-4" /> Back to search results
           </button>
         )}
 
-        {step !== 'confirmed' && (
-          <div className="flex items-center gap-3 mb-8">
-            {[
-              { key: 'details', label: 'Passenger Details', num: 1 },
-              { key: 'payment', label: 'Payment', num: 2 },
-            ].map((s, i) => (
-              <div key={s.key} className="flex items-center gap-3">
-                <div className={`flex items-center gap-2 ${step === s.key ? 'opacity-100' : (i === 0 && step === 'payment') ? 'opacity-100' : 'opacity-40'}`}>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                    (i === 0 && step === 'payment') ? 'bg-emerald-500 text-white' :
-                    step === s.key ? 'bg-sky-600 text-white' :
-                    (isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500')
-                  }`}>
-                    {i === 0 && step === 'payment' ? <CheckCircle className="w-4 h-4" /> : s.num}
-                  </div>
-                  <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{s.label}</span>
-                </div>
-                {i === 0 && <div className={`w-12 h-px ${isDark ? 'bg-gray-700' : 'bg-gray-300'}`} />}
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            
-            {/* Flight summary card */}
             <div className={`${cardBg} rounded-xl border p-5 mb-5`}>
               <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Selected Flight</h3>
               <div className="flex items-center gap-4">
@@ -162,22 +151,11 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                 </div>
                 <div className="flex-1">
                   <div className={`font-semibold ${textPrimary}`}>Idan Airlines · {flight.flightNumber}</div>
-                  <div className={`text-sm ${textSecondary}`}>{classLabels[flight.seatClass]} · {flight.aircraft}</div>
+                  <div className={`text-sm ${textSecondary}`}>{flight.seatClass} · {flight.aircraft}</div>
                 </div>
-                <div className="hidden sm:flex items-center gap-6 text-center">
-                  <div>
-                    <div className={`text-lg font-bold ${textPrimary}`}>{flight.departureTime}</div>
-                    <div className={`text-xs font-semibold ${textSecondary}`}>{flight.origin.code}</div>
-                  </div>
-                  <div className="flex flex-col items-center gap-0.5">
-                    <div className={`text-xs ${textSecondary}`}>{flight.duration}</div>
-                    <div className="w-16 h-px border-t border-dashed border-current opacity-30" />
-                    <div className={`text-xs ${textSecondary}`}>Direct</div>
-                  </div>
-                  <div>
-                    <div className={`text-lg font-bold ${textPrimary}`}>{flight.arrivalTime}</div>
-                    <div className={`text-xs font-semibold ${textSecondary}`}>{flight.destination.code}</div>
-                  </div>
+                <div className="text-right">
+                  <div className={`text-lg font-bold ${textPrimary}`}>${totalPrice.toLocaleString()}</div>
+                  <div className={`text-xs ${textSecondary}`}>{passengers.length} × ${flight.price.toLocaleString()}</div>
                 </div>
               </div>
             </div>
@@ -190,27 +168,68 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
 
             {step === 'details' && (
               <form onSubmit={handleSubmitDetails} className={`${cardBg} rounded-xl border p-6`}>
-                <h3 className={`text-sm font-bold uppercase tracking-widest mb-5 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Passenger Information</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Full Name *</label>
-                    <input type="text" value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Email Address *</label>
-                    <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Passport Number *</label>
-                    <input type="text" value={form.passportNumber} onChange={e => setForm(f => ({ ...f, passportNumber: e.target.value }))} className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
-                  </div>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className={`text-sm font-bold uppercase tracking-widest ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Passengers</h3>
+                  <button type="button" onClick={addPassenger} className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700">
+                    <Plus className="w-3.5 h-3.5" /> Add Passenger
+                  </button>
                 </div>
-                <div className="mt-6 flex justify-end">
-                  <button type="submit" disabled={loading} className="px-8 py-3 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white rounded-xl font-semibold text-sm transition-all shadow-md">
-                    {loading ? 'Processing...' : 'Continue to Payment'}
+
+                {passengers.map((pax, idx) => (
+                  <div key={idx} className={`mb-6 pb-6 ${idx < passengers.length - 1 ? `border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}` : ''}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className={`text-sm font-semibold flex items-center gap-2 ${textPrimary}`}>
+                        <User className="w-4 h-4 text-sky-500" />
+                        Passenger {idx + 1}
+                      </h4>
+                      {passengers.length > 1 && (
+                        <button type="button" onClick={() => removePassenger(idx)} className="text-red-500 hover:text-red-600">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <input type="text" value={pax.fullName} onChange={e => updatePassenger(idx, 'fullName', e.target.value)}
+                        placeholder="Full Name *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                      <input type="email" value={pax.email} onChange={e => updatePassenger(idx, 'email', e.target.value)}
+                        placeholder="Email *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                      <input type="text" value={pax.passportNumber} onChange={e => updatePassenger(idx, 'passportNumber', e.target.value)}
+                        placeholder="Passport *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <button type="submit" className="px-8 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md">
+                    Continue to Payment
                   </button>
                 </div>
               </form>
+            )}
+
+            {step === 'seats' && (
+              <div className={`${cardBg} rounded-xl border p-6`}>
+                <h3 className={`text-sm font-bold uppercase tracking-widest mb-5 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Select Your Seats</h3>
+                <p className={`text-sm mb-4 ${textSecondary}`}>Choose seats for each passenger on flight {flight.flightNumber}</p>
+                <SeatMap
+                  flightId={flight.id}
+                  onSelectSeat={(seat) => {
+                    setPassengers(prev => prev.map((p, i) => i === 0 ? { ...p } : p));
+                  }}
+                  selectedSeat=""
+                  isDark={isDark}
+                />
+                <div className="mt-5 flex justify-end gap-3">
+                  <button type="button" onClick={() => setStep('details')}
+                    className={`px-6 py-3 rounded-xl text-sm font-semibold border ${isDark ? 'border-gray-600 text-gray-300' : 'border-gray-300 text-gray-600'}`}>
+                    Back
+                  </button>
+                  <button type="button" onClick={() => setStep('payment')}
+                    className="px-8 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md">
+                    Continue to Payment
+                  </button>
+                </div>
+              </div>
             )}
 
             {step === 'payment' && (
@@ -218,28 +237,31 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                 <h3 className={`text-sm font-bold uppercase tracking-widest mb-5 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Payment Details</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Cardholder Name</label>
-                    <input type="text" value={form.cardName} onChange={e => setForm(f => ({ ...f, cardName: e.target.value }))} className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Card Number</label>
-                    <input type="text" value={form.cardNumber} onChange={e => setForm(f => ({ ...f, cardNumber: e.target.value }))} placeholder="1234 5678 9012 3456" className={`w-full px-4 py-3 rounded-lg border text-sm font-mono ${inputCls}`} />
+                    <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Card Number</label>
+                    <input type="text" value={cardNumber} onChange={e => setCardNumber(e.target.value)}
+                      placeholder="1234 5678 9012 3456" className={`w-full px-4 py-3 rounded-lg border text-sm font-mono ${inputCls}`} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>Expiry Date</label>
-                      <input type="text" value={form.cardExpiry} onChange={e => setForm(f => ({ ...f, cardExpiry: e.target.value }))} placeholder="MM/YY" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                      <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Expiry</label>
+                      <input type="text" value={cardExpiry} onChange={e => setCardExpiry(e.target.value)}
+                        placeholder="MM/YY" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium mb-1.5 ${labelCls}`}>CVC</label>
-                      <input type="text" value={form.cardCvc} onChange={e => setForm(f => ({ ...f, cardCvc: e.target.value }))} placeholder="123" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                      <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>CVC</label>
+                      <input type="text" value={cardCvc} onChange={e => setCardCvc(e.target.value)}
+                        placeholder="123" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                     </div>
                   </div>
                 </div>
                 <div className="mt-6 flex gap-3 justify-end">
-                  <button type="button" onClick={() => setStep('details')} className={`px-6 py-3 rounded-xl text-sm font-semibold border ${isDark ? 'border-gray-600 text-gray-300' : 'border-gray-300 text-gray-600'}`}>Back</button>
-                  <button type="submit" disabled={loading} className="flex items-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white rounded-xl font-semibold text-sm transition-all shadow-md">
-                    {loading ? 'Processing...' : `Confirm Booking · $${grandTotal.toLocaleString()}`}
+                  <button type="button" onClick={() => setStep('details')}
+                    className={`px-6 py-3 rounded-xl text-sm font-semibold border ${isDark ? 'border-gray-600 text-gray-300' : 'border-gray-300 text-gray-600'}`}>
+                    Back
+                  </button>
+                  <button type="submit" disabled={loading}
+                    className="flex items-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white rounded-xl font-semibold text-sm transition-all shadow-md">
+                    {loading ? 'Processing...' : `Pay $${totalPrice.toLocaleString()}`}
                   </button>
                 </div>
               </form>
@@ -255,28 +277,29 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                   {ticketId || bookingId}
                 </div>
                 <p className={`text-sm mt-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Use this PNR in <strong>Manage Booking</strong> to look up your itinerary
+                  {passengers.length > 1 ? `${passengers.length} passengers checked in. ` : ''}
+                  Use this PNR in Manage Booking to look up your itinerary
                 </p>
               </div>
             )}
           </div>
-          
+
           <div className="lg:col-span-1">
-             <div className={`${cardBg} rounded-xl border p-5 sticky top-24`}>
-                <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Price Summary</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className={textSecondary}>{searchParams.passengers} &times; {classLabels[flight.seatClass]}</span>
-                    <span className={textPrimary}>${totalPrice.toLocaleString()}</span>
-                  </div>
-                  <div className={`border-t pt-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                    <div className="flex justify-between">
-                      <span className={`font-bold ${textPrimary}`}>Total</span>
-                      <span className={`text-lg font-bold text-sky-600`}>${grandTotal.toLocaleString()}</span>
-                    </div>
+            <div className={`${cardBg} rounded-xl border p-5 sticky top-24`}>
+              <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>Price Summary</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className={textSecondary}>{passengers.length} × {flight.seatClass}</span>
+                  <span className={textPrimary}>${totalPrice.toLocaleString()}</span>
+                </div>
+                <div className={`border-t pt-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <div className="flex justify-between">
+                    <span className={`font-bold ${textPrimary}`}>Total</span>
+                    <span className={`text-lg font-bold text-sky-600`}>${totalPrice.toLocaleString()}</span>
                   </div>
                 </div>
-             </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

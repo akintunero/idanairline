@@ -5,76 +5,26 @@ import {
 } from 'lucide-react';
 import type { HttpMethod, RequestHistoryItem, DeveloperNote, DeveloperTicket, TicketPriority } from '../types';
 
-const MOCK_ENDPOINTS: Array<{ label: string; method: HttpMethod; path: string; description: string }> = [
-  { label: 'Get All Flights', method: 'GET', path: '/api/v1/flights', description: 'Returns available flights' },
-  { label: 'Search Flights', method: 'POST', path: '/api/v1/flights/search', description: 'Search by origin, destination, date' },
-  { label: 'Create Booking', method: 'POST', path: '/api/v1/bookings', description: 'Creates a new booking' },
-  { label: 'Get Booking', method: 'GET', path: '/api/v1/bookings/:id', description: 'Retrieve booking by ID' },
-  { label: 'Cancel Booking', method: 'DELETE', path: '/api/v1/bookings/:id', description: 'Cancels an existing booking' },
-  { label: 'Get User Profile', method: 'GET', path: '/api/v1/users/me', description: 'Get current user profile' },
-  { label: 'Update Preferences', method: 'PUT', path: '/api/v1/users/me/preferences', description: 'Update user preferences' },
-  { label: 'Flight Status', method: 'GET', path: '/api/v1/flights/:id/status', description: 'Real-time flight status' },
-  { label: 'Check-in', method: 'POST', path: '/api/v1/checkin', description: 'Online check-in endpoint' },
+const REAL_ENDPOINTS: Array<{ label: string; method: HttpMethod; path: string; description: string }> = [
+  { label: 'Search Flights', method: 'GET', path: '/api/v1/flights/search?origin=LOS&destination=LHR', description: 'Search by origin, destination' },
+  { label: 'Seat Map', method: 'GET', path: '/api/v1/flights/seats?flight_id=IDL1100', description: 'Get seat layout for a flight' },
+  { label: 'Hold Seat', method: 'POST', path: '/api/v1/flights/seats/hold', description: 'Hold a specific seat' },
+  { label: 'Fare Rules', method: 'GET', path: '/api/v1/flights/fare-rules?flight_id=IDL1100&seat_class=economy', description: 'Get fare rules' },
+  { label: 'Hold Booking', method: 'POST', path: '/api/v1/booking/hold', description: 'Place booking on hold' },
+  { label: 'Confirm Booking', method: 'POST', path: '/api/v1/booking/confirm', description: 'Confirm and pay' },
+  { label: 'Itinerary', method: 'POST', path: '/api/v1/booking/itinerary', description: 'Lookup by ticket_id' },
+  { label: 'Booking Lookup', method: 'GET', path: '/api/v1/booking/lookup?booking_id=', description: 'Admin booking lookup (IDOR)' },
+  { label: 'Add Passenger', method: 'POST', path: '/api/v1/booking/passengers', description: 'Add passenger to booking' },
+  { label: 'Update Passenger', method: 'PUT', path: '/api/v1/booking/passengers', description: 'Update passenger details' },
+  { label: 'Check-in', method: 'POST', path: '/api/v1/booking/checkin', description: 'Online check-in' },
+  { label: 'GDS Query', method: 'POST', path: '/api/v1/gds/query', description: 'GDS integration' },
+  { label: 'Admin Dashboard', method: 'GET', path: '/api/v1/admin/dashboard', description: 'Admin panel (no auth)' },
+  { label: 'Admin Bot Review', method: 'POST', path: '/api/v1/admin/bot/review', description: 'Trigger admin profile review' },
+  { label: 'WAF Logs', method: 'GET', path: '/_waf/logs', description: 'WAF log viewer' },
+  { label: 'User Profile', method: 'GET', path: '/api/v1/user/profile', description: 'Get profile (authenticated)' },
+  { label: 'Update Bio', method: 'POST', path: '/api/v1/user/bio', description: 'Update profile bio (XSS)' },
+  { label: 'Apply Promo', method: 'POST', path: '/apply-promo', description: 'Apply promo code (SQLi)' },
 ];
-
-const MOCK_RESPONSES: Record<string, { status: number; body: unknown; delay: number }> = {
-  'GET /api/v1/flights': {
-    status: 200, delay: 320,
-    body: {
-      flights: [
-        { id: 'IDL1100', number: 'ID-LH-100', origin: 'LOS', destination: 'LHR', departure: '08:00', arrival: '14:45', duration: '6h 45m', price: 780, seats: 24 },
-        { id: 'IDD1107', number: 'ID-DX-107', origin: 'LOS', destination: 'DXB', departure: '10:30', arrival: '17:40', duration: '7h 10m', price: 620, seats: 18 },
-      ],
-      total: 2, page: 1,
-    },
-  },
-  'POST /api/v1/flights/search': {
-    status: 200, delay: 480,
-    body: {
-      results: [
-        { id: 'IDL1100', number: 'ID-LH-100', route: 'LOS → LHR', price: 780, availability: 'available' },
-      ],
-      searchId: 'SRH-8291-X', cached: false,
-    },
-  },
-  'POST /api/v1/bookings': {
-    status: 201, delay: 740,
-    body: {
-      booking_reference: 'IDN-48291-LHR',
-      status: 'confirmed',
-      passenger: { name: 'James Okafor', email: 'james@example.com' },
-      flight: { number: 'ID-LH-100', date: '2026-06-15', class: 'economy' },
-      price: { base: 780, taxes: 93, total: 898 },
-      issued_at: new Date().toISOString(),
-    },
-  },
-  'GET /api/v1/bookings/:id': {
-    status: 200, delay: 210,
-    body: { booking_reference: 'IDN-48291-LHR', status: 'confirmed', passenger_name: 'James Okafor', origin: 'LOS', destination: 'LHR', departure_date: '2026-06-15' },
-  },
-  'DELETE /api/v1/bookings/:id': {
-    status: 200, delay: 530,
-    body: { message: 'Booking successfully cancelled', booking_reference: 'IDN-48291-LHR', refund_status: 'processing' },
-  },
-  'GET /api/v1/users/me': {
-    status: 200, delay: 180,
-    body: { id: 'usr_8291x', email: 'user@idanairlines.com', name: 'System User', role: 'engineer', tier: 'gold' },
-  },
-  'PUT /api/v1/users/me/preferences': {
-    status: 200, delay: 290,
-    body: { message: 'Preferences updated', preferences: { seat_class: 'business', home_airport: 'LOS', notifications: true } },
-  },
-  'GET /api/v1/flights/:id/status': {
-    status: 200, delay: 160,
-    body: { flight_id: 'IDL1100', status: 'on_time', gate: 'B12', terminal: '2', departure_time: '08:00', estimated_departure: '08:00' },
-  },
-  'POST /api/v1/checkin': {
-    status: 200, delay: 620,
-    body: { status: 'checked_in', boarding_pass: 'BP-IDN-48291', seat: '14A', gate: 'B12', boarding_time: '07:20', message: 'Check-in successful' },
-  },
-};
-
-const DEFAULT_RESPONSE = { status: 404, delay: 100, body: { error: 'Endpoint not found', code: 'NOT_FOUND' } };
 
 interface Header { key: string; value: string; id: string }
 
@@ -120,31 +70,54 @@ export default function DevToolsPage({ isDark }: DevToolsPageProps) {
     setLoading(true);
     const start = Date.now();
 
-    const mockKey = Object.keys(MOCK_RESPONSES).find(k => {
-      const [m, p] = k.split(' ');
-      const pattern = p.replace(/:[\w]+/g, '[^/]+');
-      return m === method && new RegExp(`^${pattern}$`).test(endpoint);
-    });
+    try {
+      const reqHeaders: Record<string, string> = {};
+      for (const h of headers) {
+        if (h.key) reqHeaders[h.key] = h.value;
+      }
 
-    const mock = mockKey ? MOCK_RESPONSES[mockKey] : DEFAULT_RESPONSE;
-    await new Promise(r => setTimeout(r, mock.delay));
+      const fetchOpts: RequestInit = { method, headers: reqHeaders };
+      if (method !== 'GET' && body.trim()) {
+        fetchOpts.body = body;
+      }
 
-    const elapsed = Date.now() - start;
-    const result = { status: mock.status, time: elapsed, body: mock.body };
-    setResponse(result);
+      // Don't send Authorization header with placeholder value
+      if (reqHeaders['Authorization']?.includes('<token>')) {
+        const token = localStorage.getItem('idan_auth_token');
+        if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
+        else delete reqHeaders['Authorization'];
+      }
 
-    const historyItem: RequestHistoryItem = {
-      id: crypto.randomUUID(),
-      method,
-      endpoint,
-      headers: headers.reduce<Record<string, string>>((acc, h) => { if (h.key) acc[h.key] = h.value; return acc; }, {}),
-      body: method !== 'GET' && body.trim() ? (() => { try { return JSON.parse(body); } catch { return undefined; } })() : undefined,
-      status_code: mock.status,
-      response_body: mock.body,
-      response_time_ms: elapsed,
-      created_at: new Date().toISOString(),
-    };
-    setHistory(prev => [historyItem, ...prev.slice(0, 49)]);
+      const res = await fetch(endpoint, fetchOpts);
+      const elapsed = Date.now() - start;
+
+      let resBody: unknown;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('json')) {
+        resBody = await res.json();
+      } else {
+        resBody = { text: await res.text(), content_type: contentType };
+      }
+
+      const result = { status: res.status, time: elapsed, body: resBody };
+      setResponse(result);
+
+      const historyItem: RequestHistoryItem = {
+        id: crypto.randomUUID(),
+        method,
+        endpoint,
+        headers: reqHeaders,
+        body: method !== 'GET' && body.trim() ? (() => { try { return JSON.parse(body); } catch { return undefined; } })() : undefined,
+        status_code: res.status,
+        response_body: resBody,
+        response_time_ms: elapsed,
+        created_at: new Date().toISOString(),
+      };
+      setHistory(prev => [historyItem, ...prev.slice(0, 49)]);
+    } catch (err) {
+      setResponse({ status: 0, time: Date.now() - start, body: { error: err instanceof Error ? err.message : 'Request failed' } });
+    }
+
     setLoading(false);
   }, [method, endpoint, headers, body]);
 
@@ -245,7 +218,7 @@ export default function DevToolsPage({ isDark }: DevToolsPageProps) {
             <div>
               <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${textSecondary}`}>Quick Endpoints</label>
               <div className="grid grid-cols-1 gap-1.5 max-h-32 overflow-y-auto">
-                {MOCK_ENDPOINTS.map(ep => (
+                {REAL_ENDPOINTS.map(ep => (
                   <button
                     key={`${ep.method}-${ep.path}`}
                     onClick={() => { setMethod(ep.method); setEndpoint(ep.path); }}
@@ -488,7 +461,7 @@ export default function DevToolsPage({ isDark }: DevToolsPageProps) {
               {/* Docs tab */}
               {activeTab === 'docs' && (
                 <div className="p-3 space-y-1.5">
-                  {MOCK_ENDPOINTS.map(ep => (
+                  {REAL_ENDPOINTS.map(ep => (
                     <div key={`${ep.method}-${ep.path}`} className={`rounded-lg overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
                       <button
                         onClick={() => setDocsExpanded(prev => prev === `${ep.method}-${ep.path}` ? null : `${ep.method}-${ep.path}`)}

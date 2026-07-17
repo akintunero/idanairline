@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { User, Plane, Star, MapPin, Calendar, CreditCard as Edit2, Save, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { User, Plane, Star, MapPin, Calendar, Save, X, Edit3, AlertTriangle } from 'lucide-react';
 import type { Booking, SeatClass } from '../types';
 import { airports } from '../data/airports';
 
@@ -26,8 +26,49 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
     seatClass: 'business' as SeatClass,
     mealPreference: 'Standard',
     frequentFlyerNumber: 'IDN-FF-8291047',
+    bio: '',
   });
   const [editForm, setEditForm] = useState(profile);
+  const [bioText, setBioText] = useState('');
+  const [bioSaved, setBioSaved] = useState(false);
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const token = localStorage.getItem('idan_auth_token');
+      const res = await fetch('/api/v1/user/profile', {
+        headers: { 'Authorization': `Bearer ${token ?? ''}` },
+      });
+      const data = await res.json();
+      if (data.success && data.data?.bio !== undefined) {
+        setProfile(p => ({ ...p, bio: data.data.bio || '' }));
+        setBioText(data.data.bio || '');
+      }
+    } catch {}
+  };
+
+  const handleSaveBio = async () => {
+    try {
+      const token = localStorage.getItem('idan_auth_token');
+      const res = await fetch('/api/v1/user/bio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token ?? ''}`,
+        },
+        body: JSON.stringify({ bio: bioText }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProfile(p => ({ ...p, bio: bioText }));
+        setBioSaved(true);
+        setTimeout(() => setBioSaved(false), 2000);
+      }
+    } catch {}
+  };
 
   const bg = isDark ? 'bg-gray-950' : 'bg-gray-50';
   const cardBg = isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
@@ -46,7 +87,6 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
   return (
     <div className={`${bg} min-h-screen py-8`}>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Profile header */}
         <div className={`${cardBg} rounded-2xl border p-6 mb-6`}>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-5">
@@ -72,12 +112,11 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
                 isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              {editing ? <X className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
+              {editing ? <X className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
               {editing ? 'Cancel' : 'Edit Profile'}
             </button>
           </div>
 
-          {/* Miles / tier bar */}
           <div className={`mt-5 pt-5 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
             <div className="flex justify-between items-center mb-2">
               <span className={`text-xs font-semibold ${textSecondary}`}>Miles Balance</span>
@@ -86,17 +125,55 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
             <div className={`h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>
               <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${Math.min(100, (totalMiles / 25000) * 100)}%` }} />
             </div>
-            <div className="flex justify-between mt-1">
-              <span className={`text-xs ${textSecondary}`}>Silver</span>
-              <span className={`text-xs ${textSecondary}`}>Gold 10,000</span>
-              <span className={`text-xs ${textSecondary}`}>Platinum 25,000</span>
-            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Profile details */}
           <div className="lg:col-span-2 space-y-5">
+
+            {/* Bio Section — XSS Vulnerability */}
+            <div className={`${cardBg} rounded-xl border p-5`}>
+              <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>
+                About Me
+              </h3>
+              <div className="space-y-3">
+                <textarea
+                  value={bioText}
+                  onChange={e => setBioText(e.target.value)}
+                  placeholder="Tell us about yourself..."
+                  className={`w-full px-4 py-3 rounded-xl border text-sm ${
+                    isDark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                  }`}
+                  rows={3}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSaveBio}
+                    className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Save Bio
+                  </button>
+                  {bioSaved && (
+                    <span className="text-xs text-emerald-600">Saved!</span>
+                  )}
+                </div>
+                {/* XSS: bio is rendered as raw HTML */}
+                {profile.bio && (
+                  <div className={`mt-3 p-4 rounded-xl border ${isDark ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className={`text-xs font-semibold mb-2 ${textSecondary} flex items-center gap-1.5`}>
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                      Rendered Bio
+                    </div>
+                    <div
+                      className={`text-sm ${textPrimary} prose prose-sm max-w-none dark:prose-invert`}
+                      dangerouslySetInnerHTML={{ __html: profile.bio }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className={`${cardBg} rounded-xl border p-5`}>
               <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>
                 Personal Information
@@ -129,10 +206,10 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { label: 'Full Name', value: profile.fullName, icon: User },
-                    { label: 'Email', value: profile.email, icon: User },
-                    { label: 'Phone', value: profile.phone, icon: User },
-                    { label: 'Passport', value: profile.passportNumber, icon: User },
+                    { label: 'Full Name', value: profile.fullName },
+                    { label: 'Email', value: profile.email },
+                    { label: 'Phone', value: profile.phone },
+                    { label: 'Passport', value: profile.passportNumber },
                   ].map(f => (
                     <div key={f.label}>
                       <dt className={`text-xs font-medium mb-0.5 ${textSecondary}`}>{f.label}</dt>
@@ -143,7 +220,6 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
               )}
             </div>
 
-            {/* Preferences */}
             <div className={`${cardBg} rounded-xl border p-5`}>
               <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>
                 Travel Preferences
@@ -191,15 +267,10 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
                       {classLabels[profile.seatClass]}
                     </dd>
                   </div>
-                  <div>
-                    <dt className={`text-xs font-medium mb-0.5 ${textSecondary}`}>Meal Preference</dt>
-                    <dd className={`text-sm font-medium ${textPrimary}`}>{profile.mealPreference}</dd>
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* Travel history */}
             <div className={`${cardBg} rounded-xl border p-5`}>
               <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>
                 Travel History
@@ -229,9 +300,7 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
             </div>
           </div>
 
-          {/* Sidebar */}
           <div className="space-y-5">
-            {/* Tier card */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 text-white">
               <div className="flex justify-between items-start mb-4">
                 <div>
@@ -246,7 +315,6 @@ export default function ProfilePage({ bookings, isDark }: ProfilePageProps) {
               <div className="text-xs text-slate-400">{profile.fullName}</div>
             </div>
 
-            {/* Quick stats */}
             <div className={`${cardBg} rounded-xl border p-5`}>
               <h4 className={`text-xs font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-sky-400' : 'text-sky-600'}`}>
                 Stats

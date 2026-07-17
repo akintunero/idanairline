@@ -37,6 +37,9 @@ export interface ItineraryLookupResult {
   passenger_name?: string;
   price?: number;
   status?: string;
+  itinerary_metadata?: {
+    ownership_audit_hash?: string;
+  };
 }
 
 export interface Booking {
@@ -98,6 +101,7 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
+  bio: string;
   preferred_seat_class: SeatClass;
   home_airport: string;
   notifications_email: boolean;
