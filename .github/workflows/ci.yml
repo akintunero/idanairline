@@ -93,6 +93,9 @@ jobs:
 
       - name: Build and start stack
         run: |
+          echo "DB_PASSWORD=$DB_PASSWORD" > .env
+          echo "JWT_SECRET=$JWT_SECRET" >> .env
+          echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> .env
           docker compose up --build -d
 
       - name: Wait for portal
