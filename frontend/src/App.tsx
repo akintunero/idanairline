@@ -45,6 +45,41 @@ export default function App() {
     }
   }, []);
 
+  const loadMyBookings = async () => {
+    const token = localStorage.getItem('idan_auth_token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/v1/booking/mine', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success && data.data?.bookings) {
+        const mapped: Booking[] = data.data.bookings.map((b: any) => ({
+          id: b.ticket_id || b.id,
+          booking_reference: b.ticket_id || b.id,
+          user_id: null,
+          passenger_name: b.passenger_name || '',
+          passenger_email: b.passenger_email || '',
+          passport_number: b.passport_number || '',
+          origin: b.origin,
+          destination: b.destination,
+          departure_date: b.departure_date || '',
+          return_date: null,
+          flight_number: b.flight_number || '',
+          seat_class: b.seat_class || 'economy',
+          price: b.price || 0,
+          status: b.status === 'CONFIRMED' ? 'confirmed' : b.status === 'PENDING' ? 'pending' : 'cancelled',
+          created_at: '',
+        }));
+        setMyBookings(mapped);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (currentUser) loadMyBookings();
+  }, [currentUser]);
+
   const handleLogin = (token: string) => {
     const user = parseToken(token);
     if (user) {
@@ -72,6 +107,7 @@ export default function App() {
 
   const handleBookingComplete = (booking: Booking) => {
     setMyBookings(prev => [booking, ...prev]);
+    loadMyBookings();
   };
 
   const handleNavigate = (page: Page) => {

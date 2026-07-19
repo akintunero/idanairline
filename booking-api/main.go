@@ -142,6 +142,7 @@ func main() {
 	mux.HandleFunc("/api/v0/booking/export", a.handleLegacyExport)
 	mux.HandleFunc("GET /api/v1/booking/boarding-pass", a.handleBoardingPass)
 	mux.HandleFunc("GET /api/v1/booking/lookup", a.handleIDORLookup)
+	mux.HandleFunc("GET /api/v1/booking/mine", a.handleMyBookings)
 	// Flight inventory
 	mux.HandleFunc("GET /api/v1/flights/search", a.handleSearchFlights)
 	mux.HandleFunc("GET /api/v1/flights/seats", a.handleSeatMap)

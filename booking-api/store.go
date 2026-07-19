@@ -198,7 +198,18 @@ func (a *app) updatePassenger(passengerID int, updates map[string]interface{}) e
 
 func (a *app) createCheckin(bookingID string, passengerID int, seatNumber string) (*CheckinRecord, error) {
 	ref := fmt.Sprintf("BP-%s-%d", bookingID, passengerID)
-	_, err := a.db.Exec(
+	var existingRef string
+	err := a.db.QueryRow("SELECT boarding_pass_ref FROM checkins WHERE booking_id = $1 AND passenger_id = $2", bookingID, passengerID).Scan(&existingRef)
+	if err == nil {
+		return &CheckinRecord{
+			BookingID:       bookingID,
+			PassengerID:     passengerID,
+			SeatNumber:      seatNumber,
+			CheckedInAt:     time.Now().UTC().Format(time.RFC3339),
+			BoardingPassRef: existingRef,
+		}, nil
+	}
+	_, err = a.db.Exec(
 		"INSERT INTO checkins (booking_id, passenger_id, seat_number, boarding_pass_ref) VALUES ($1, $2, $3, $4)",
 		bookingID, passengerID, seatNumber, ref,
 	)

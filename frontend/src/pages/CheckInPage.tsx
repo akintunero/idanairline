@@ -28,7 +28,7 @@ export default function CheckInPage({ isDark }: CheckInPageProps) {
     setError('');
     try {
       const token = localStorage.getItem('idan_auth_token');
-      const res = await fetch('/api/v1/booking/lookup?booking_id=' + encodeURIComponent(ref), {
+      const res = await fetch('/api/v1/booking/lookup?booking_id=' + encodeURIComponent(ref) + '&last_name=' + encodeURIComponent(lastName), {
         headers: { 'Authorization': `Bearer ${token ?? ''}` },
       });
       const data = await res.json();

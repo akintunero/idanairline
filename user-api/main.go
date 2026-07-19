@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -96,6 +97,8 @@ func main() {
 	mux.HandleFunc("GET /api/v1/user/profile", handleProfile)
 	mux.HandleFunc("POST /api/v1/auth/register", handleRegister)
 	mux.HandleFunc("POST /api/v1/auth/login", handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/forgot-password", handleForgotPassword)
+	mux.HandleFunc("POST /api/v1/auth/reset-password", handleResetPassword)
 	mux.HandleFunc("/api/v1/admin/dashboard", adminDashboardHandler)
 	mux.HandleFunc("/api/v1/user/profile/update", updateProfileHandler)
 	mux.HandleFunc("/api/v1/user/avatar", updateAvatarHandler)
@@ -178,6 +181,80 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "token": token})
+}
+
+func generateResetToken(email string) string {
+	h := sha256.New()
+	h.Write([]byte(email + ":idan_reset_salt_2024"))
+	return fmt.Sprintf("%x", h.Sum(nil))[:32]
+}
+
+func handleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Email string `json:"email"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	var email string
+	err := db.QueryRow("SELECT email FROM users WHERE email = $1", req.Email).Scan(&email)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "email not found")
+		return
+	}
+
+	token := generateResetToken(req.Email)
+
+	db.Exec("INSERT INTO password_reset_tokens (email, token) VALUES ($1, $2)", req.Email, token)
+
+	go func() {
+		resetLink := fmt.Sprintf("http://localhost:8080/reset-password?token=%s", token)
+		emailPayload := map[string]interface{}{
+			"name":     email,
+			"template": fmt.Sprintf("<p>Click <a href=\"%s\">here</a> to reset your password.</p><p>Token: %s</p>", resetLink, token),
+		}
+		body, _ := json.Marshal(emailPayload)
+		http.Post("http://email-service:5000/api/v1/email/send", "application/json", bytes.NewReader(body))
+	}()
+
+	writeSuccess(w, http.StatusOK, "reset link sent", map[string]string{
+		"message": "If the email exists, a reset link has been sent",
+	})
+}
+
+func handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" || req.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "token and new_password are required")
+		return
+	}
+
+	var email string
+	err := db.QueryRow("SELECT email FROM password_reset_tokens WHERE token = $1 AND used = FALSE AND expires_at > NOW()", req.Token).Scan(&email)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid or expired token")
+		return
+	}
+
+	db.Exec("UPDATE password_reset_tokens SET used = TRUE WHERE token = $1", req.Token)
+	db.Exec("UPDATE users SET password = $1, updated_at = NOW() WHERE email = $2", req.NewPassword, email)
+
+	data := map[string]interface{}{
+		"message": "Your password has been reset",
+	}
+
+	flag := envFlag("CTF_FLAG_A04_PASSWORD_RESET")
+	if flag != "" && email == "admin@idan.air" {
+		data["password_audit"] = map[string]string{
+			"previous_password_hash": flag,
+			"rotation_policy":        "immediate",
+		}
+	}
+
+	writeSuccess(w, http.StatusOK, "password reset successful", data)
 }
 
 func buildJWT(userID, email string) string {

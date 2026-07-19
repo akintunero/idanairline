@@ -1,65 +1,11 @@
 import { useState } from 'react';
-import { Plane, Search, CheckCircle, Clock, XCircle, ChevronRight, Calendar, Hash, Download } from 'lucide-react';
+import { Plane, Search, CheckCircle, Clock, XCircle, Calendar, Hash, Download, User, CreditCard, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Booking, ItineraryLookupResult } from '../types';
 
 interface BookingsPageProps {
   bookings: Booking[];
   isDark: boolean;
 }
-
-const SAMPLE_BOOKINGS: Booking[] = [
-  {
-    id: '1',
-    booking_reference: 'IDN-48291-LHR',
-    user_id: null,
-    passenger_name: 'Adebayo Okafor',
-    passenger_email: 'adebayo@example.com',
-    passport_number: 'A12345678',
-    origin: 'LOS',
-    destination: 'LHR',
-    departure_date: '2026-06-15',
-    return_date: '2026-06-22',
-    flight_number: 'IDL1100',
-    seat_class: 'business',
-    price: 2345,
-    status: 'confirmed',
-    created_at: '2026-05-01T10:00:00Z',
-  },
-  {
-    id: '2',
-    booking_reference: 'IDN-73812-DXB',
-    user_id: null,
-    passenger_name: 'Adebayo Okafor',
-    passenger_email: 'adebayo@example.com',
-    passport_number: 'A12345678',
-    origin: 'LOS',
-    destination: 'DXB',
-    departure_date: '2026-07-04',
-    return_date: null,
-    flight_number: 'IDD1107',
-    seat_class: 'economy',
-    price: 694,
-    status: 'pending',
-    created_at: '2026-05-02T14:30:00Z',
-  },
-  {
-    id: '3',
-    booking_reference: 'IDN-29104-CDG',
-    user_id: null,
-    passenger_name: 'Adebayo Okafor',
-    passenger_email: 'adebayo@example.com',
-    passport_number: 'A12345678',
-    origin: 'LHR',
-    destination: 'CDG',
-    departure_date: '2026-03-10',
-    return_date: '2026-03-14',
-    flight_number: 'IDP1054',
-    seat_class: 'economy',
-    price: 380,
-    status: 'cancelled',
-    created_at: '2026-02-15T09:00:00Z',
-  },
-];
 
 export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
   const [searchRef, setSearchRef] = useState('');
@@ -68,6 +14,7 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
   const [pnrResult, setPnrResult] = useState<ItineraryLookupResult | null>(null);
   const [pnrLoading, setPnrLoading] = useState(false);
   const [pnrError, setPnrError] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handlePNRLookup = async () => {
     if (!pnrSearch.trim()) return;
@@ -115,14 +62,7 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
     } catch {}
   };
 
-  const handlePathTraversalTest = () => {
-    const file = prompt('Enter file path for boarding pass:', '../../../etc/passwd');
-    if (file) {
-      handleDownloadBoardingPass(file);
-    }
-  };
-
-  const allBookings = [...bookings, ...SAMPLE_BOOKINGS];
+  const allBookings = [...bookings];
 
   const filtered = allBookings.filter(b => {
     const matchRef = !searchRef || b.booking_reference.toLowerCase().includes(searchRef.toLowerCase());
@@ -284,47 +224,98 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
           {filtered.map(booking => {
             const sc = statusConfig[booking.status];
             const StatusIcon = sc.icon;
+            const isExpanded = expandedId === booking.id;
             return (
-              <div key={booking.id} className={`${cardBg} rounded-xl border p-5 transition-all hover:shadow-md`}>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="w-10 h-10 bg-sky-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Plane className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <div className={`font-bold text-lg ${textPrimary}`}>
-                        {booking.origin} <span className={`text-sm font-normal ${textSecondary}`}> → </span> {booking.destination}
+              <div key={booking.id} className={`${cardBg} rounded-xl border transition-all hover:shadow-md ${isExpanded ? 'ring-2 ring-sky-500' : ''}`}>
+                <div
+                  onClick={() => setExpandedId(isExpanded ? null : booking.id)}
+                  className="p-5 cursor-pointer"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 bg-sky-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Plane className="w-5 h-5 text-white" />
                       </div>
-                      <div className={`text-xs ${textSecondary}`}>
-                        Flight {booking.flight_number} · {classLabels[booking.seat_class]}
+                      <div>
+                        <div className={`font-bold text-lg ${textPrimary}`}>
+                          {booking.origin} <span className={`text-sm font-normal ${textSecondary}`}>→</span> {booking.destination}
+                        </div>
+                        <div className={`text-xs ${textSecondary}`}>
+                          Flight {booking.flight_number} · {classLabels[booking.seat_class]}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className={`flex items-center gap-1.5 text-xs ${textSecondary}`}>
-                      <Hash className="w-3.5 h-3.5" />
-                      {booking.booking_reference}
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className={`flex items-center gap-1.5 text-xs ${textSecondary}`}>
+                        <Hash className="w-3.5 h-3.5" />
+                        {booking.booking_reference}
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs ${textSecondary}`}>
+                        <Calendar className="w-3.5 h-3.5" />
+                        {booking.departure_date}
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${sc.bg}`}>
+                        <StatusIcon className="w-3.5 h-3.5" />
+                        {sc.label}
+                      </div>
+                      <div className={`font-bold ${textPrimary}`}>${booking.price.toLocaleString()}</div>
+                      {isExpanded ? <ChevronUp className="w-4 h-4 text-sky-500" /> : <ChevronDown className="w-4 h-4 text-sky-500" />}
                     </div>
-                    <div className={`flex items-center gap-1.5 text-xs ${textSecondary}`}>
-                      <Calendar className="w-3.5 h-3.5" />
-                      {booking.departure_date}
-                    </div>
-                    <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${sc.bg}`}>
-                      <StatusIcon className="w-3.5 h-3.5" />
-                      {sc.label}
-                    </div>
-                    <div className={`font-bold ${textPrimary}`}>${booking.price.toLocaleString()}</div>
-                    {booking.status === 'confirmed' && (
-                      <button
-                        onClick={() => handleDownloadBoardingPass(booking.booking_reference)}
-                        className="flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" /> Boarding Pass
-                      </button>
-                    )}
                   </div>
                 </div>
+
+                {isExpanded && (
+                  <div className={`px-5 pb-5 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4">
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Passenger</div>
+                        <div className={`text-sm font-medium ${textPrimary} flex items-center gap-1.5 mt-0.5`}>
+                          <User className="w-3.5 h-3.5 text-sky-500" />
+                          {booking.passenger_name}
+                        </div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Email</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5`}>{booking.passenger_email}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Passport</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5 font-mono`}>{booking.passport_number}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Route</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5`}>{booking.origin} → {booking.destination}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Flight</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5`}>{booking.flight_number}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Class</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5`}>{classLabels[booking.seat_class]}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Reference</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5 font-mono`}>{booking.booking_reference}</div>
+                      </div>
+                      <div>
+                        <div className={`text-xs ${textSecondary}`}>Price</div>
+                        <div className={`text-sm font-medium ${textPrimary} mt-0.5`}>${booking.price.toLocaleString()}</div>
+                      </div>
+                    </div>
+                    {booking.status === 'confirmed' && (
+                      <div className="mt-4 flex gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDownloadBoardingPass(booking.booking_reference); }}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Boarding Pass
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -340,21 +331,6 @@ export default function BookingsPage({ bookings, isDark }: BookingsPageProps) {
           )}
         </div>
 
-        {/* Dev tool: Path traversal test */}
-        <div className={`mt-8 p-4 rounded-xl border border-dashed ${isDark ? 'border-gray-700 bg-gray-800/30' : 'border-amber-300 bg-amber-50/30'}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <span className={`text-xs font-semibold ${isDark ? 'text-gray-500' : 'text-amber-700'}`}>Developer Tools</span>
-              <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-600' : 'text-amber-600'}`}>Boarding pass file resolver</p>
-            </div>
-            <button
-              onClick={handlePathTraversalTest}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-colors"
-            >
-              Test File Path
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

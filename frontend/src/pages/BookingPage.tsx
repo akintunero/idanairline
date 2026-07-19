@@ -4,7 +4,8 @@ import SeatMap from '../components/SeatMap';
 import type { Flight, SearchParams, Booking } from '../types';
 
 interface PassengerForm {
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   passportNumber: string;
 }
@@ -23,16 +24,17 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
   const [error, setError] = useState('');
   const [bookingId, setBookingId] = useState('');
   const [ticketId, setTicketId] = useState('');
+  const [selectedSeat, setSelectedSeat] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvc, setCardCvc] = useState('');
 
   const [passengers, setPassengers] = useState<PassengerForm[]>([
-    { fullName: '', email: '', passportNumber: '' },
+    { firstName: '', lastName: '', email: '', passportNumber: '' },
   ]);
 
   const addPassenger = () => {
-    setPassengers(p => [...p, { fullName: '', email: '', passportNumber: '' }]);
+    setPassengers(p => [...p, { firstName: '', lastName: '', email: '', passportNumber: '' }]);
   };
 
   const removePassenger = (idx: number) => {
@@ -53,12 +55,14 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500 focus:border-sky-500'
     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-sky-500';
 
+  const formatCardNumber = (v: string) => v.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 ').slice(0, 19);
+
   const totalPrice = flight.price * searchParams.passengers * passengers.length;
 
   const handleSubmitDetails = (e: React.FormEvent) => {
     e.preventDefault();
     for (const p of passengers) {
-      if (!p.fullName || !p.email || !p.passportNumber) {
+      if (!p.firstName || !p.lastName || !p.email || !p.passportNumber) {
         setError('Please fill in all passenger details.');
         return;
       }
@@ -69,50 +73,65 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
     setStep('seats');
   };
 
+  const validateCard = (): string | null => {
+    const digits = cardNumber.replace(/\s/g, '');
+    if (!/^\d{16}$/.test(digits)) return 'Card number must be 16 digits.';
+    if (!/^\d{3}$/.test(cardCvc)) return 'CVC must be 3 digits.';
+    const match = cardExpiry.match(/^(\d{2})\/(\d{2})$/);
+    if (!match) return 'Expiry must be in MM/YY format.';
+    const now = new Date();
+    const expMonth = parseInt(match[1], 10);
+    const expYear = parseInt(match[2], 10) + 2000;
+    if (expMonth < 1 || expMonth > 12) return 'Invalid expiry month.';
+    if (expYear < now.getFullYear() || (expYear === now.getFullYear() && expMonth < now.getMonth() + 1))
+      return 'Card is expired.';
+    return null;
+  };
+
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cardNumber || !cardExpiry || !cardCvc) {
       setError('Please enter your payment details.');
       return;
     }
+    const cardErr = validateCard();
+    if (cardErr) { setError(cardErr); return; }
     setLoading(true);
     setError('');
 
     try {
       const token = localStorage.getItem('idan_auth_token');
-      // Hold the booking first
-      await fetch('/api/v1/booking/hold', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+      const authHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` };
+
+      const holdRes = await fetch('/api/v1/booking/hold', {
+        method: 'POST', headers: authHeaders,
         body: JSON.stringify({ booking_id: bookingId, flight_id: flight.id }),
       });
+      if (!holdRes.ok) { const e = await holdRes.json(); throw new Error(e.message || 'Hold failed'); }
 
-      // Add passengers
       for (const pax of passengers) {
-        await fetch('/api/v1/booking/passengers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
-          body: JSON.stringify({ booking_id: bookingId, full_name: pax.fullName, email: pax.email, passport_number: pax.passportNumber }),
+        const paxRes = await fetch('/api/v1/booking/passengers', {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ booking_id: bookingId, full_name: pax.firstName + ' ' + pax.lastName, email: pax.email, passport_number: pax.passportNumber }),
         });
+        if (!paxRes.ok) { const e = await paxRes.json(); throw new Error(e.message || 'Passenger add failed'); }
       }
 
-      // Confirm booking
       const res = await fetch('/api/v1/booking/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+        method: 'POST', headers: authHeaders,
         body: JSON.stringify({ booking_id: bookingId, card_number: cardNumber }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Payment processing failed.');
 
+      const confirmedPnr = data.data?.ticket_id || bookingId;
       if (data.data?.ticket_id) setTicketId(data.data.ticket_id);
       setStep('confirmed');
-
       onBookingComplete({
-        id: bookingId,
-        booking_reference: bookingId,
+        id: confirmedPnr,
+        booking_reference: confirmedPnr,
         user_id: null,
-        passenger_name: passengers[0].fullName,
+        passenger_name: passengers[0].firstName + ' ' + passengers[0].lastName,
         passenger_email: passengers[0].email,
         passport_number: passengers[0].passportNumber,
         origin: flight.origin.code,
@@ -188,9 +207,11 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <input type="text" value={pax.fullName} onChange={e => updatePassenger(idx, 'fullName', e.target.value)}
-                        placeholder="Full Name *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <input type="text" value={pax.firstName} onChange={e => updatePassenger(idx, 'firstName', e.target.value)}
+                        placeholder="First Name *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                      <input type="text" value={pax.lastName} onChange={e => updatePassenger(idx, 'lastName', e.target.value)}
+                        placeholder="Last Name *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                       <input type="email" value={pax.email} onChange={e => updatePassenger(idx, 'email', e.target.value)}
                         placeholder="Email *" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                       <input type="text" value={pax.passportNumber} onChange={e => updatePassenger(idx, 'passportNumber', e.target.value)}
@@ -213,10 +234,17 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                 <p className={`text-sm mb-4 ${textSecondary}`}>Choose seats for each passenger on flight {flight.flightNumber}</p>
                 <SeatMap
                   flightId={flight.id}
-                  onSelectSeat={(seat) => {
-                    setPassengers(prev => prev.map((p, i) => i === 0 ? { ...p } : p));
+                  onSelectSeat={(seatNum) => {
+                    setSelectedSeat(seatNum);
+                    setPassengers(prev => prev.map((p, i) => i === 0 ? { ...p, passportNumber: p.passportNumber } : p));
+                    const token = localStorage.getItem('idan_auth_token');
+                    fetch('/api/v1/flights/seats/hold', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token ?? ''}` },
+                      body: JSON.stringify({ flight_id: flight.id, seat_number: seatNum }),
+                    });
                   }}
-                  selectedSeat=""
+                  selectedSeat={selectedSeat}
                   isDark={isDark}
                 />
                 <div className="mt-5 flex justify-end gap-3">
@@ -238,19 +266,21 @@ export default function BookingPage({ flight, searchParams, onBack, onBookingCom
                 <div className="space-y-4">
                   <div>
                     <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Card Number</label>
-                    <input type="text" value={cardNumber} onChange={e => setCardNumber(e.target.value)}
+                    <input type="text" value={cardNumber} onChange={e => setCardNumber(formatCardNumber(e.target.value))} maxLength={19}
                       placeholder="1234 5678 9012 3456" className={`w-full px-4 py-3 rounded-lg border text-sm font-mono ${inputCls}`} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Expiry</label>
-                      <input type="text" value={cardExpiry} onChange={e => setCardExpiry(e.target.value)}
-                        placeholder="MM/YY" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                    <input type="text" value={cardExpiry} onChange={e => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setCardExpiry(v.length > 2 ? v.slice(0, 2) + '/' + v.slice(2) : v);
+                    }} placeholder="MM/YY" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                     </div>
                     <div>
                       <label className={`block text-sm font-medium mb-1.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>CVC</label>
-                      <input type="text" value={cardCvc} onChange={e => setCardCvc(e.target.value)}
-                        placeholder="123" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
+                    <input type="text" value={cardCvc} onChange={e => setCardCvc(e.target.value.replace(/\D/g, '').slice(0, 3))} maxLength={3}
+                      placeholder="123" className={`w-full px-4 py-3 rounded-lg border text-sm ${inputCls}`} />
                     </div>
                   </div>
                 </div>

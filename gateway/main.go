@@ -83,6 +83,7 @@ func (rl *rateLimiter) allow(key string) bool {
 func newGateway() (*gateway, error) {
 	targets := []routeTarget{
 		{prefix: "/api/v1/booking/", upstream: "http://booking-api:8080", label: "booking-api:8080"},
+		{prefix: "/api/v1/flights/", upstream: "http://booking-api:8080", label: "booking-api:8080"},
 		{prefix: "/api/v1/payment/", upstream: "http://payment-api:8080", label: "payment-api:8080"},
 		{prefix: "/api/v1/user/", upstream: "http://user-api:8080", label: "user-api:8080"},
 		{prefix: "/api/v1/auth/", upstream: "http://user-api:8080", label: "user-api:8080"},

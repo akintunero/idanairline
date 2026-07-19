@@ -44,6 +44,10 @@ func (a *app) handleHoldBooking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := parseUserIDFromJWT(r)
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	bookingID := strings.TrimSpace(req.BookingID)
 
 	_, err := a.db.Exec(
@@ -52,7 +56,12 @@ func (a *app) handleHoldBooking(w http.ResponseWriter, r *http.Request) {
 		bookingID, StatusPending, userID, origin, destination, a.defaultPrice, flightID,
 	)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to hold booking")
+		log.Printf("HOLD_FAILED: booking=%s user=%s flight=%s err=%v", bookingID, userID, flightID, err)
+		if strings.Contains(err.Error(), "foreign key constraint") {
+			writeError(w, http.StatusUnauthorized, "session expired — please log in again")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to hold booking")
+		}
 		return
 	}
 
@@ -136,17 +145,23 @@ func (a *app) handleConfirmBooking(w http.ResponseWriter, r *http.Request) {
 	var status string
 	err := a.db.QueryRow("SELECT status FROM bookings WHERE id = $1", bookingID).Scan(&status)
 	if err != nil {
-		a.db.Exec(
+		if _, ierr := a.db.Exec(
 			"INSERT INTO bookings (id, status, user_id, origin, destination, price) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING",
 			bookingID, StatusPending, userID, "LOS", "LHR", a.defaultPrice,
-		)
+		); ierr != nil {
+			log.Printf("CONFIRM_INSERT_FAILED: booking=%s err=%v", bookingID, ierr)
+		}
 	} else if status != StatusPending {
 		writeError(w, http.StatusConflict, "booking is not in PENDING status")
 		return
 	}
 
 	ticketID := generatePNR()
-	a.db.Exec("UPDATE bookings SET status = $1, ticket_id = $2 WHERE id = $3", StatusConfirmed, ticketID, bookingID)
+	if _, err := a.db.Exec("UPDATE bookings SET status = $1, ticket_id = $2, passenger_name = COALESCE((SELECT full_name FROM booking_passengers WHERE booking_id = $3 LIMIT 1), passenger_name) WHERE id = $3", StatusConfirmed, ticketID, bookingID); err != nil {
+		log.Printf("CONFIRM_UPDATE_FAILED: booking=%s err=%v", bookingID, err)
+		writeError(w, http.StatusInternalServerError, "failed to confirm booking")
+		return
+	}
 
 	if a.flashPromoCode != "" && promoCode == a.flashPromoCode {
 		a.flashMu.Lock()
@@ -197,7 +212,7 @@ func (a *app) handleItinerary(w http.ResponseWriter, r *http.Request) {
 		ticketID = strings.TrimSpace(ticketID)
 		var b Booking
 		err := a.db.QueryRow(
-			"SELECT id, ticket_id, status, user_id, passenger_name, origin, destination, price FROM bookings WHERE ticket_id = $1",
+			"SELECT b.id, b.ticket_id, b.status, b.user_id, COALESCE(p.full_name, ''), b.origin, b.destination, b.price FROM bookings b LEFT JOIN booking_passengers p ON p.booking_id = b.id WHERE b.ticket_id = $1 OR b.id = $1 LIMIT 1",
 			ticketID,
 		).Scan(&b.ID, &b.TicketID, &b.Status, &b.UserID, &b.PassengerName, &b.Origin, &b.Destination, &b.Price)
 		if err != nil {
@@ -219,7 +234,7 @@ func (a *app) handleItinerary(w http.ResponseWriter, r *http.Request) {
 		if id, ok := arr[0].(string); ok {
 			var b Booking
 			err := a.db.QueryRow(
-				"SELECT id, ticket_id, status, user_id, passenger_name, origin, destination, price FROM bookings WHERE ticket_id = $1",
+				"SELECT b.id, b.ticket_id, b.status, b.user_id, COALESCE(p.full_name, ''), b.origin, b.destination, b.price FROM bookings b LEFT JOIN booking_passengers p ON p.booking_id = b.id WHERE b.ticket_id = $1 OR b.id = $1 LIMIT 1",
 				strings.TrimSpace(id),
 			).Scan(&b.ID, &b.TicketID, &b.Status, &b.UserID, &b.PassengerName, &b.Origin, &b.Destination, &b.Price)
 			if err == nil {
@@ -266,7 +281,7 @@ func (a *app) handleBoardingPass(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleLegacyExport(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query("SELECT id, ticket_id, status, user_id, passenger_name, origin, destination, price FROM bookings")
+	rows, err := a.db.Query("SELECT id, ticket_id, status, user_id, COALESCE((SELECT full_name FROM booking_passengers WHERE booking_id = bookings.id LIMIT 1), ''), origin, destination, price FROM bookings")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to export bookings")
 		return
@@ -447,19 +462,20 @@ func (a *app) handleCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check booking ownership and status
 	var status, flightID, seatClass, departureTime string
+	lookupID := req.BookingID
 	err := a.db.QueryRow(`
 		SELECT b.status, COALESCE(b.flight_id,''), COALESCE(b.seat_class,'economy'),
 		       COALESCE(f.departure_time::text, '')
 		FROM bookings b LEFT JOIN flights f ON b.flight_id = f.id
-		WHERE b.id = $1 AND b.user_id = $2`,
-		req.BookingID, userID,
+		WHERE b.id = $1 OR b.ticket_id = $1`,
+		lookupID,
 	).Scan(&status, &flightID, &seatClass, &departureTime)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "booking not found")
 		return
 	}
+	a.db.QueryRow("SELECT id FROM bookings WHERE id = $1 OR ticket_id = $1", lookupID).Scan(&req.BookingID)
 	if status != StatusConfirmed {
 		writeError(w, http.StatusConflict, "booking must be confirmed before check-in")
 		return
@@ -480,12 +496,15 @@ func (a *app) handleCheckin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var passengerID int
+	a.db.QueryRow("SELECT id FROM booking_passengers WHERE booking_id = $1 LIMIT 1", req.BookingID).Scan(&passengerID)
+
 	seatNumber := req.SeatNumber
 	if seatNumber == "" {
 		seatNumber = "AUTO"
 	}
 
-	record, err := a.createCheckin(req.BookingID, req.PassengerID, seatNumber)
+	record, err := a.createCheckin(req.BookingID, passengerID, seatNumber)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "check-in failed")
 		return
@@ -547,8 +566,68 @@ func (a *app) handleFareRules(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *app) handleMyBookings(w http.ResponseWriter, r *http.Request) {
+	userID := parseUserIDFromJWT(r)
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	rows, err := a.db.Query(
+		`SELECT b.id, COALESCE(b.ticket_id, ''), b.status, b.origin, b.destination,
+		        b.price, b.flight_id, b.seat_class, COALESCE(b.passenger_name, ''),
+		        COALESCE((SELECT email FROM booking_passengers WHERE booking_id = b.id LIMIT 1), ''),
+		        COALESCE((SELECT passport_number FROM booking_passengers WHERE booking_id = b.id LIMIT 1), '')
+		 FROM bookings b WHERE b.user_id = $1 ORDER BY b.created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		writeSuccess(w, http.StatusOK, "bookings retrieved", map[string]interface{}{"bookings": []interface{}{}})
+		return
+	}
+	defer rows.Close()
+
+	type bookingItem struct {
+		ID              string  `json:"id"`
+		TicketID        string  `json:"ticket_id"`
+		BookingReference string `json:"booking_reference"`
+		Status          string  `json:"status"`
+		Origin          string  `json:"origin"`
+		Destination     string  `json:"destination"`
+		Price           float64 `json:"price"`
+		FlightNumber    string  `json:"flight_number"`
+		SeatClass       string  `json:"seat_class"`
+		PassengerName   string  `json:"passenger_name"`
+		PassengerEmail  string  `json:"passenger_email"`
+		PassportNumber  string  `json:"passport_number"`
+		DepartureDate   string  `json:"departure_date"`
+	}
+
+	var bookings []bookingItem
+	for rows.Next() {
+		var b bookingItem
+		var flightID, email, passport string
+		rows.Scan(&b.ID, &b.TicketID, &b.Status, &b.Origin, &b.Destination,
+			&b.Price, &flightID, &b.SeatClass, &b.PassengerName, &email, &passport)
+		b.BookingReference = b.ID
+		b.FlightNumber = flightID
+		b.PassengerEmail = email
+		b.PassportNumber = passport
+		b.DepartureDate = ""
+		bookings = append(bookings, b)
+	}
+	if bookings == nil {
+		bookings = []bookingItem{}
+	}
+
+	writeSuccess(w, http.StatusOK, "bookings retrieved", map[string]interface{}{
+		"bookings": bookings,
+	})
+}
+
 func (a *app) handleIDORLookup(w http.ResponseWriter, r *http.Request) {
 	bookingID := r.URL.Query().Get("booking_id")
+	lastName := strings.TrimSpace(r.URL.Query().Get("last_name"))
 	if bookingID == "" {
 		writeError(w, http.StatusBadRequest, "booking_id parameter required")
 		return
@@ -556,10 +635,21 @@ func (a *app) handleIDORLookup(w http.ResponseWriter, r *http.Request) {
 
 	var b Booking
 	err := a.db.QueryRow(
-		"SELECT id, ticket_id, status, user_id, passenger_name, origin, destination, price FROM bookings WHERE id = $1",
+		"SELECT b.id, b.ticket_id, b.status, b.user_id, COALESCE(p.full_name, ''), b.origin, b.destination, b.price FROM bookings b LEFT JOIN booking_passengers p ON p.booking_id = b.id WHERE b.id = $1 LIMIT 1",
 		bookingID,
 	).Scan(&b.ID, &b.TicketID, &b.Status, &b.UserID, &b.PassengerName, &b.Origin, &b.Destination, &b.Price)
 	if err != nil {
+		err2 := a.db.QueryRow(
+			"SELECT b.id, b.ticket_id, b.status, b.user_id, COALESCE(p.full_name, ''), b.origin, b.destination, b.price FROM bookings b LEFT JOIN booking_passengers p ON p.booking_id = b.id WHERE b.ticket_id = $1 LIMIT 1",
+			bookingID,
+		).Scan(&b.ID, &b.TicketID, &b.Status, &b.UserID, &b.PassengerName, &b.Origin, &b.Destination, &b.Price)
+		if err2 != nil {
+			writeError(w, http.StatusNotFound, "booking not found")
+			return
+		}
+	}
+
+	if lastName != "" && !strings.HasSuffix(strings.ToLower(b.PassengerName), strings.ToLower(lastName)) {
 		writeError(w, http.StatusNotFound, "booking not found")
 		return
 	}

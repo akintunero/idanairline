@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS bookings (
     id VARCHAR(255) PRIMARY KEY,
     ticket_id VARCHAR(255) UNIQUE,
     status VARCHAR(50) DEFAULT 'PENDING',
-    user_id VARCHAR(255) REFERENCES users(user_id),
+    passenger_name VARCHAR(255) DEFAULT '',
+    user_id UUID REFERENCES users(user_id),
     origin VARCHAR(10),
     destination VARCHAR(10),
     price DECIMAL(10, 2),
@@ -107,5 +108,14 @@ CREATE TABLE IF NOT EXISTS flash_promo_redemptions (
 CREATE TABLE IF NOT EXISTS csrf_tokens (
     token VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255),
+    expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '1 hour'
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    token VARCHAR(255) NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
     expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '1 hour'
 );
