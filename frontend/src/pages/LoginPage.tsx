@@ -32,7 +32,8 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
       const res = await fetch('/api/v1/auth/csrf-token', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      const data = await res.json();
+      let data: any;
+      try { data = await res.json(); } catch { return; }
       if (data.success) {
         setCsrfToken(data.csrf_token);
       }
@@ -76,7 +77,8 @@ export default function LoginPage({ isDark, onLogin, onNavigate }: LoginPageProp
         }
       }
 
-      const data = await res.json();
+      let data: any;
+      try { data = await res.json(); } catch { throw new Error('Server error — try again or check backend is running.'); }
       if (!res.ok || !data.token) {
         throw new Error(data.message || 'Invalid credentials.');
       }

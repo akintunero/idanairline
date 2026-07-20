@@ -36,7 +36,8 @@ export default function RegisterPage({ isDark, onNavigate }: RegisterPageProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      let data: any;
+      try { data = await res.json(); } catch { throw new Error('Server error — try again or check backend is running.'); }
       if (!res.ok) {
         throw new Error(data.message || 'Registration failed.');
       }
