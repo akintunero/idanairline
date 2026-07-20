@@ -75,10 +75,16 @@ func (a *app) initDB() {
 	if err != nil {
 		log.Fatalf("DB_CONNECTION_FAILED: %v", err)
 	}
-	if err = a.db.Ping(); err != nil {
-		log.Fatalf("DB_PING_FAILED: %v", err)
+	for i := 0; i < 20; i++ {
+		err = a.db.Ping()
+		if err == nil {
+			log.Println("Connected to PostgreSQL")
+			return
+		}
+		log.Printf("Waiting for database connection (%d/20): %v", i+1, err)
+		time.Sleep(2 * time.Second)
 	}
-	log.Println("Connected to PostgreSQL")
+	log.Fatalf("DB_PING_FAILED after retries: %v", err)
 }
 
 func (a *app) initRedis() {

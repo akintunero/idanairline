@@ -13,6 +13,15 @@ docker compose up --build -d
 
 The booking portal will be available at `http://localhost:8080`.
 
+### Reset
+
+To clear all data (user accounts, bookings, etc.) and start fresh:
+
+```bash
+make down
+make up
+```
+
 ## Tech Stack
 
 React, Go, Python, PostgreSQL, Redis, nginx.

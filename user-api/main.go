@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -57,10 +58,17 @@ func initDB() {
 	if err != nil {
 		log.Fatalf("DB_CONNECTION_FAILED: %v", err)
 	}
-	if err = db.Ping(); err != nil {
-		log.Fatalf("DB_PING_FAILED: %v", err)
+	
+	for i := 0; i < 20; i++ {
+		err = db.Ping()
+		if err == nil {
+			log.Println("Connected to PostgreSQL")
+			return
+		}
+		log.Printf("Waiting for database connection (%d/20): %v", i+1, err)
+		time.Sleep(2 * time.Second)
 	}
-	log.Println("Connected to PostgreSQL")
+	log.Fatalf("DB_PING_FAILED after retries: %v", err)
 }
 
 func seedAdmin() {
